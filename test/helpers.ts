@@ -1,4 +1,7 @@
 import { env } from "cloudflare:test";
+import { asc, eq } from "drizzle-orm";
+import { createDb } from "../src/db/client";
+import { event as eventTable, slot, song, take } from "../src/db/schema";
 import app from "../src/index";
 
 const ORIGIN = "http://localhost";
@@ -96,4 +99,183 @@ export function createTestClient(): TestClient {
   }
 
   return { request, get, post, cookieHeader };
+}
+
+function extractDataAttr(html: string, attr: string): string | null {
+  const match = new RegExp(`${attr}="([^"]*)"`).exec(html);
+  return match?.[1] ?? null;
+}
+
+export interface CreateEventOptions {
+  title?: string;
+  region?: string;
+  startsAt?: string;
+  place?: string;
+  notes?: string;
+  joinCode?: string;
+  organizerPassword?: string;
+  organizerDisplayName?: string;
+  organizerInstruments?: string;
+}
+
+export interface CreatedEvent {
+  /** イベント作成に使ったクライアント。主催者 cookie(o:true)を持つ。 */
+  client: TestClient;
+  slug: string;
+  joinCode: string;
+  organizerPassword: string;
+  /** 主催者の端末トークン(平文)。 */
+  token: string;
+  /** 主催者の復帰キー(平文)。 */
+  recoveryKey: string;
+  /** POST /new のレスポンス(welcome ページ)。 */
+  response: Response;
+  html: string;
+}
+
+/**
+ * POST /new でイベントを作成する。返る `client` は主催者 cookie を持つ。
+ */
+export async function createEvent(
+  options: CreateEventOptions = {},
+): Promise<CreatedEvent> {
+  const client = createTestClient();
+  const values = {
+    title: options.title ?? "テストオフ会",
+    region: options.region ?? "東京",
+    startsAt: options.startsAt ?? "2026-09-05T19:00",
+    place: options.place ?? "スタジオA",
+    notes: options.notes ?? "",
+    joinCode: options.joinCode ?? "himitsu",
+    organizerPassword: options.organizerPassword ?? "hunter2",
+    organizerDisplayName: options.organizerDisplayName ?? "主催者",
+    organizerInstruments: options.organizerInstruments ?? "Gt",
+  };
+  const response = await client.post("/new", values);
+  const html = await response.text();
+  const slug = extractDataAttr(html, "data-slug");
+  const token = extractDataAttr(html, "data-token");
+  const recoveryKey = extractDataAttr(html, "data-recovery-key");
+  if (!slug || !token || !recoveryKey) {
+    throw new Error(
+      `createEvent: failed to parse welcome page (status=${response.status})`,
+    );
+  }
+  return {
+    client,
+    slug,
+    joinCode: values.joinCode,
+    organizerPassword: values.organizerPassword,
+    token,
+    recoveryKey,
+    response,
+    html,
+  };
+}
+
+/**
+ * 合言葉で `/e/:slug/join` に POST し、viewer cookie を持つクライアントを返す。
+ * `client` を渡さなければ新しいクライアント(cookie なし)を使う。
+ */
+export async function joinAsViewer(
+  slug: string,
+  joinCode: string,
+  client: TestClient = createTestClient(),
+): Promise<TestClient> {
+  const response = await client.post(`/e/${slug}/join`, { joinCode });
+  if (response.status !== 303) {
+    throw new Error(`joinAsViewer failed with status ${response.status}`);
+  }
+  return client;
+}
+
+export interface RegisterParticipantOptions {
+  displayName?: string;
+  instruments?: string;
+  slot?: string;
+  confirm?: boolean;
+}
+
+/** `/e/:slug/participants` に POST して参加者登録する。 */
+export async function registerParticipant(
+  client: TestClient,
+  slug: string,
+  options: RegisterParticipantOptions = {},
+): Promise<{ response: Response; html: string }> {
+  const body: Record<string, string> = {
+    displayName: options.displayName ?? "山田",
+    instruments: options.instruments ?? "",
+    slot: options.slot ?? "",
+  };
+  if (options.confirm) {
+    body.confirm = "1";
+  }
+  const response = await client.post(`/e/${slug}/participants`, body);
+  const html = await response.text();
+  return { response, html };
+}
+
+export interface CreateSongOptions {
+  title?: string;
+  artist?: string;
+  refUrl?: string;
+  songKey?: string;
+  notes?: string;
+  instruments?: string[];
+}
+
+/** `/e/:slug/songs` に POST して曲を登録する(participant の client で呼ぶこと)。 */
+export async function createSong(
+  client: TestClient,
+  slug: string,
+  options: CreateSongOptions = {},
+): Promise<Response> {
+  const instruments = options.instruments ?? ["Gt", "Gt", "Ba", "Dr", "Vo"];
+  const params = new URLSearchParams();
+  params.set("title", options.title ?? "テスト曲");
+  params.set("artist", options.artist ?? "");
+  params.set("refUrl", options.refUrl ?? "");
+  params.set("songKey", options.songKey ?? "");
+  params.set("notes", options.notes ?? "");
+  for (const instrument of instruments) {
+    params.append("instrument", instrument);
+  }
+  return client.post(`/e/${slug}/songs`, params);
+}
+
+/**
+ * イベント内の最初の曲・Take1 の枠 id を sort_order 順にすべて取得する。
+ * join/leave のテストで枠 id が必要なときに使う。
+ */
+export async function findFirstSongSlotIds(slug: string): Promise<string[]> {
+  const db = createDb(env.DB);
+  const eventRows = await db.select().from(eventTable).where(eq(eventTable.slug, slug));
+  const eventId = eventRows[0]?.id;
+  if (!eventId) {
+    throw new Error(`findFirstSongSlotIds: event not found for slug ${slug}`);
+  }
+  const songRows = await db
+    .select()
+    .from(song)
+    .where(eq(song.eventId, eventId))
+    .orderBy(asc(song.createdAt), asc(song.id));
+  const songId = songRows[0]?.id;
+  if (!songId) {
+    throw new Error("findFirstSongSlotIds: no song found for event");
+  }
+  const takeRows = await db
+    .select()
+    .from(take)
+    .where(eq(take.songId, songId))
+    .orderBy(asc(take.sortOrder), asc(take.id));
+  const takeId = takeRows[0]?.id;
+  if (!takeId) {
+    throw new Error("findFirstSongSlotIds: no take found for song");
+  }
+  const slotRows = await db
+    .select()
+    .from(slot)
+    .where(eq(slot.takeId, takeId))
+    .orderBy(asc(slot.sortOrder));
+  return slotRows.map((s) => s.id);
 }

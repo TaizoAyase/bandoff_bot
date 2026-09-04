@@ -34,8 +34,9 @@ export const requireOrganizer: MiddlewareHandler<AppEnv> = async (c, next) => {
 };
 
 /**
- * closed のイベントでは participant による書き込みを 403 にする。
- * organizer は常に通す。
+ * closed のイベントでは、主催者以外の書き込みを 403 にする。
+ * まだ participant を持たない viewer(未登録者の新規登録・エントリー)も
+ * 対象に含める。organizer は常に通す。
  */
 export const requireOpenForParticipants: MiddlewareHandler<AppEnv> = async (
   c,
@@ -43,7 +44,7 @@ export const requireOpenForParticipants: MiddlewareHandler<AppEnv> = async (
 ) => {
   const event = c.get("event");
   const viewer = c.get("viewer");
-  if (event?.status === "closed" && viewer?.participant && !viewer.isOrganizer) {
+  if (event?.status === "closed" && !viewer?.isOrganizer) {
     return c.text("Forbidden", 403);
   }
   await next();

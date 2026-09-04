@@ -4,6 +4,7 @@ import type { AppEnv } from "./env";
 import { csrf } from "./middleware/csrf";
 import { securityHeaders } from "./middleware/security-headers";
 import { eventApp } from "./routes/event";
+import { rootApp } from "./routes/root";
 import { errorResponse, notFoundResponse } from "./views/pages/error";
 import { HomePage } from "./views/pages/home";
 import { renderPage } from "./views/render";
@@ -19,6 +20,7 @@ app.use("*", async (c, next) => {
 
 app.get("/", (c) => renderPage(c, HomePage()));
 
+app.route("/", rootApp);
 app.route("/e/:slug", eventApp);
 
 app.notFound((c) => notFoundResponse(c));

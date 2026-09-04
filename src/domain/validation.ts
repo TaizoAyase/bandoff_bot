@@ -331,6 +331,37 @@ export function validateParticipantForm(
   return { ok: true, value: { displayName: displayName.value } };
 }
 
+/**
+ * 曲登録時のパート構成(複数枠の楽器名)を検証する。
+ * 空欄の行は無視する(クライアント側の増減操作で空行が紛れ込んでも無害にする)。
+ */
+export function validateSongSlots(
+  rawInstruments: string[],
+): ValidationResult<string[]> {
+  const trimmed = rawInstruments.map((v) => v.trim()).filter((v) => v !== "");
+
+  if (trimmed.length === 0) {
+    return { ok: false, errors: { instruments: "パートを1つ以上追加してください" } };
+  }
+  if (trimmed.length > LIMITS.MAX_SLOTS_PER_TAKE) {
+    return {
+      ok: false,
+      errors: { instruments: `パートは${LIMITS.MAX_SLOTS_PER_TAKE}個までです` },
+    };
+  }
+  for (const instrument of trimmed) {
+    if (instrument.length > LIMITS.INSTRUMENT_NAME_MAX) {
+      return {
+        ok: false,
+        errors: {
+          instruments: `楽器名は${LIMITS.INSTRUMENT_NAME_MAX}文字以内で入力してください`,
+        },
+      };
+    }
+  }
+  return { ok: true, value: trimmed };
+}
+
 export interface SlotFormInput {
   instrument: string;
   note: string;

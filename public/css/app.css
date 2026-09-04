@@ -45,3 +45,137 @@ textarea {
   padding: 16px;
   margin-bottom: 12px;
 }
+
+/* フォーム共通 */
+.field {
+  margin-bottom: 12px;
+}
+
+.field label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.field-error {
+  color: #dc2626;
+  margin: 4px 0 0;
+  font-size: 0.9em;
+}
+
+.actions {
+  margin-top: 16px;
+}
+
+.notice {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.notice-warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.recovery-key {
+  font-size: 1.4em;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+
+.paste-text {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+/* 曲一覧 */
+.song-list-nav {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.empty-notice {
+  color: #666;
+}
+
+.take {
+  margin-top: 8px;
+}
+
+.take-heading {
+  margin: 8px 0 4px;
+}
+
+.slot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid #eee;
+}
+
+.slot:first-child {
+  border-top: none;
+}
+
+.slot-label {
+  font-weight: bold;
+  min-width: 3em;
+}
+
+.slot-empty .slot-label {
+  color: #999;
+}
+
+.slot-name {
+  flex: 1;
+}
+
+.slot-note {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.slot-action {
+  margin: 0;
+}
+
+/* 曲登録フォームのパート構成行 */
+.slot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.slot-row input {
+  flex: 1;
+}

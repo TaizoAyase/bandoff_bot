@@ -4,6 +4,7 @@ import {
   normalizeInstruments,
   numberInstruments,
   PRESET_INSTRUMENTS,
+  parseInstrumentsInput,
 } from "../../src/domain/instruments";
 
 describe("PRESET_INSTRUMENTS / DEFAULT_SLOTS", () => {
@@ -56,5 +57,35 @@ describe("normalizeInstruments", () => {
   it("truncates each entry to 20 characters", () => {
     const long = "a".repeat(30);
     expect(normalizeInstruments([long])).toEqual(["a".repeat(20)]);
+  });
+});
+
+describe("parseInstrumentsInput", () => {
+  it("splits a comma-separated string", () => {
+    expect(parseInstrumentsInput("Gt, Ba")).toEqual(["Gt", "Ba"]);
+  });
+
+  it("trims surrounding whitespace around each item", () => {
+    expect(parseInstrumentsInput("  Gt , Ba  ,Dr")).toEqual(["Gt", "Ba", "Dr"]);
+  });
+
+  it("drops empty entries", () => {
+    expect(parseInstrumentsInput("Gt,,Ba,")).toEqual(["Gt", "Ba"]);
+  });
+
+  it("removes exact duplicates", () => {
+    expect(parseInstrumentsInput("Gt,Ba,Gt")).toEqual(["Gt", "Ba"]);
+  });
+
+  it("also splits on full-width commas (、 and ，)", () => {
+    expect(parseInstrumentsInput("Gt、Ba，Dr")).toEqual(["Gt", "Ba", "Dr"]);
+  });
+
+  it("handles a mix of half-width and full-width commas", () => {
+    expect(parseInstrumentsInput("Gt, Ba、Dr，Vo")).toEqual(["Gt", "Ba", "Dr", "Vo"]);
+  });
+
+  it("handles an empty string", () => {
+    expect(parseInstrumentsInput("")).toEqual([]);
   });
 });

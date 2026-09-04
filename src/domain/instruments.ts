@@ -29,6 +29,17 @@ export function numberInstruments(instruments: readonly string[]): string[] {
   });
 }
 
+// 半角カンマに加え、日本語入力で紛れやすい全角カンマ(、/，)も区切りとして扱う。
+const INSTRUMENTS_INPUT_SEPARATOR = /[,、，]/;
+
+/**
+ * カンマ区切りの自由入力(例: `"Gt, Ba"` `"Gt、Ba"`)を配列に分解し、正規化する。
+ * フォームの1テキスト入力から持ち込み楽器のリストを受け取るときに使う。
+ */
+export function parseInstrumentsInput(value: string): string[] {
+  return normalizeInstruments(value.split(INSTRUMENTS_INPUT_SEPARATOR));
+}
+
 /**
  * 持ち込み楽器の自由入力リストを正規化する。
  * 前後空白除去・空要素除去・重複除去(完全一致)を行い、各要素は20文字までに切り詰める。
