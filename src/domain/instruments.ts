@@ -1,0 +1,48 @@
+/**
+ * 楽器名まわりの純粋関数。定義済み楽器・初期枠構成・自動採番・正規化。
+ */
+
+export const PRESET_INSTRUMENTS = ["Gt", "Ba", "Dr", "Vo", "Key", "Cho"] as const;
+
+export const DEFAULT_SLOTS = ["Gt", "Gt", "Ba", "Dr", "Vo"] as const;
+
+const INSTRUMENT_NAME_MAX_LENGTH = 20;
+
+/**
+ * 同じ楽器名(完全一致)が複数あるとき `Gt1` `Gt2` のように連番を振る。
+ * 1つしかない楽器には番号を付けない。並び順(sort_order 順)は維持する。
+ */
+export function numberInstruments(instruments: readonly string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const instrument of instruments) {
+    counts.set(instrument, (counts.get(instrument) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  return instruments.map((instrument) => {
+    const total = counts.get(instrument) ?? 0;
+    if (total <= 1) {
+      return instrument;
+    }
+    const next = (seen.get(instrument) ?? 0) + 1;
+    seen.set(instrument, next);
+    return `${instrument}${next}`;
+  });
+}
+
+/**
+ * 持ち込み楽器の自由入力リストを正規化する。
+ * 前後空白除去・空要素除去・重複除去(完全一致)を行い、各要素は20文字までに切り詰める。
+ */
+export function normalizeInstruments(list: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of list) {
+    const trimmed = raw.trim().slice(0, INSTRUMENT_NAME_MAX_LENGTH);
+    if (trimmed === "" || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}

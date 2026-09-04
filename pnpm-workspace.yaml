@@ -1,0 +1,5 @@
+# esbuild と workerd はネイティブバイナリを取得する postinstall スクリプトを
+# 持つ。pnpm 11 はデフォルトで postinstall を無視するため、ここで明示的に許可する。
+allowBuilds:
+  esbuild: true
+  workerd: true

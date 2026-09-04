@@ -1,0 +1,33 @@
+{
+  "name": "bandoff",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "pnpm build:client && wrangler dev",
+    "dev:client": "node scripts/build-client.mjs --watch",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p test/tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply bandoff --local",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "hono": "4.13.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "drizzle-kit": "0.31.10",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "wrangler": "~4.128.0"
+  }
+}

@@ -1,0 +1,15 @@
+name = "bandoff"
+main = "src/index.ts"
+compatibility_date = "2026-09-04"
+
+[assets]
+directory = "./public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bandoff"
+database_id = "c512c0cd-b8b5-4fb4-9af3-a58543afcbaa"
+migrations_dir = "migrations"
+
+[observability]
+enabled = false
