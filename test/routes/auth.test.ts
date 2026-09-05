@@ -52,7 +52,9 @@ describe("POST /e/:slug/join", () => {
   it("succeeds with 303 and a Set-Cookie on the right join code", async () => {
     const created = await createEvent();
     const client = createTestClient();
-    const response = await client.post(`/e/${created.slug}/join`, {
+    // ブラウザの <form method="post"> 送信(Origin: null)を模した経路でも
+    // 通ることを確認する。
+    const response = await client.postAsBrowserForm(`/e/${created.slug}/join`, {
       joinCode: created.joinCode,
     });
     expect(response.status).toBe(303);

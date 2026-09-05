@@ -41,7 +41,12 @@ describe("GET /e/:slug/songs/new", () => {
 describe("POST /e/:slug/songs", () => {
   it("creates a song with Take1 and 5 default slots", async () => {
     const setup = await createEventWithParticipant();
-    const response = await createSong(setup.client, setup.slug, { title: "曲A" });
+    // ブラウザの <form method="post"> 送信(Origin: null)を模した経路でも
+    // 通ることを確認する。
+    const response = await createSong(setup.client, setup.slug, {
+      title: "曲A",
+      useBrowserForm: true,
+    });
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toMatch(
       new RegExp(`^/e/${setup.slug}/#song-`),

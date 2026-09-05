@@ -20,6 +20,16 @@ export interface TestClient {
   get(path: string, init?: RequestInit): Promise<Response>;
   /** POST リクエスト。Origin ヘッダを自動で付与する。 */
   post(path: string, body?: PostBody, init?: RequestInit): Promise<Response>;
+  /**
+   * ブラウザの `<form method="post">` によるナビゲーションを模した POST。
+   * `Referrer-Policy: no-referrer` の下では Origin が `null` になり、
+   * 代わりに `Sec-Fetch-Site: same-origin` が送られる(実ブラウザの挙動)。
+   */
+  postAsBrowserForm(
+    path: string,
+    body?: PostBody,
+    init?: RequestInit,
+  ): Promise<Response>;
   /** 現在 jar に保持している Cookie ヘッダの値。 */
   cookieHeader(): string | undefined;
 }
@@ -72,6 +82,22 @@ export function createTestClient(): TestClient {
     return request(path, { ...init, method: "GET" });
   }
 
+  function buildPostBody(body: PostBody, headers: Headers): BodyInit | undefined {
+    if (
+      body === undefined ||
+      typeof body === "string" ||
+      body instanceof URLSearchParams ||
+      body instanceof FormData
+    ) {
+      return body;
+    }
+    const finalBody = new URLSearchParams(body);
+    if (!headers.has("content-type")) {
+      headers.set("content-type", "application/x-www-form-urlencoded");
+    }
+    return finalBody;
+  }
+
   function post(
     path: string,
     body?: PostBody,
@@ -81,24 +107,23 @@ export function createTestClient(): TestClient {
     if (!headers.has("origin")) {
       headers.set("origin", ORIGIN);
     }
-    let finalBody: BodyInit | undefined;
-    if (
-      body === undefined ||
-      typeof body === "string" ||
-      body instanceof URLSearchParams ||
-      body instanceof FormData
-    ) {
-      finalBody = body;
-    } else {
-      finalBody = new URLSearchParams(body);
-      if (!headers.has("content-type")) {
-        headers.set("content-type", "application/x-www-form-urlencoded");
-      }
-    }
+    const finalBody = buildPostBody(body, headers);
     return request(path, { ...init, method: "POST", headers, body: finalBody });
   }
 
-  return { request, get, post, cookieHeader };
+  function postAsBrowserForm(
+    path: string,
+    body?: PostBody,
+    init: RequestInit = {},
+  ): Promise<Response> {
+    const headers = new Headers(init.headers);
+    headers.set("origin", "null");
+    headers.set("sec-fetch-site", "same-origin");
+    const finalBody = buildPostBody(body, headers);
+    return request(path, { ...init, method: "POST", headers, body: finalBody });
+  }
+
+  return { request, get, post, postAsBrowserForm, cookieHeader };
 }
 
 function extractDataAttr(html: string, attr: string): string | null {
@@ -116,6 +141,8 @@ export interface CreateEventOptions {
   organizerPassword?: string;
   organizerDisplayName?: string;
   organizerInstruments?: string;
+  /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
+  useBrowserForm?: boolean;
 }
 
 export interface CreatedEvent {
@@ -151,7 +178,8 @@ export async function createEvent(
     organizerDisplayName: options.organizerDisplayName ?? "主催者",
     organizerInstruments: options.organizerInstruments ?? "Gt",
   };
-  const response = await client.post("/new", values);
+  const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
+  const response = await submit("/new", values);
   const html = await response.text();
   const slug = extractDataAttr(html, "data-slug");
   const token = extractDataAttr(html, "data-token");
@@ -176,13 +204,17 @@ export async function createEvent(
 /**
  * 合言葉で `/e/:slug/join` に POST し、viewer cookie を持つクライアントを返す。
  * `client` を渡さなければ新しいクライアント(cookie なし)を使う。
+ * `useBrowserForm` を true にすると `postAsBrowserForm` でブラウザのフォーム
+ * 送信を模す。
  */
 export async function joinAsViewer(
   slug: string,
   joinCode: string,
   client: TestClient = createTestClient(),
+  useBrowserForm = false,
 ): Promise<TestClient> {
-  const response = await client.post(`/e/${slug}/join`, { joinCode });
+  const submit = useBrowserForm ? client.postAsBrowserForm : client.post;
+  const response = await submit(`/e/${slug}/join`, { joinCode });
   if (response.status !== 303) {
     throw new Error(`joinAsViewer failed with status ${response.status}`);
   }
@@ -194,6 +226,8 @@ export interface RegisterParticipantOptions {
   instruments?: string;
   slot?: string;
   confirm?: boolean;
+  /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
+  useBrowserForm?: boolean;
 }
 
 /** `/e/:slug/participants` に POST して参加者登録する。 */
@@ -210,7 +244,8 @@ export async function registerParticipant(
   if (options.confirm) {
     body.confirm = "1";
   }
-  const response = await client.post(`/e/${slug}/participants`, body);
+  const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
+  const response = await submit(`/e/${slug}/participants`, body);
   const html = await response.text();
   return { response, html };
 }
@@ -222,6 +257,8 @@ export interface CreateSongOptions {
   songKey?: string;
   notes?: string;
   instruments?: string[];
+  /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
+  useBrowserForm?: boolean;
 }
 
 /** `/e/:slug/songs` に POST して曲を登録する(participant の client で呼ぶこと)。 */
@@ -240,7 +277,8 @@ export async function createSong(
   for (const instrument of instruments) {
     params.append("instrument", instrument);
   }
-  return client.post(`/e/${slug}/songs`, params);
+  const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
+  return submit(`/e/${slug}/songs`, params);
 }
 
 /**

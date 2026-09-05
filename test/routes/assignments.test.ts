@@ -45,7 +45,11 @@ describe("POST /e/:slug/slots/:id/join", () => {
     await registerParticipant(client, setup.slug, { displayName: "鈴木" });
 
     const slotId = setup.slotIds[0] ?? "";
-    const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
+    // ブラウザの <form method="post"> 送信(Origin: null)を模した経路でも
+    // 通ることを確認する。
+    const response = await client.postAsBrowserForm(
+      `/e/${setup.slug}/slots/${slotId}/join`,
+    );
     expect(response.status).toBe(303);
     const location = response.headers.get("location") ?? "";
     expect(location).toContain("notice=joined");

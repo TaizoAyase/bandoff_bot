@@ -7,7 +7,12 @@ import { createEvent, createTestClient } from "../helpers";
 
 describe("POST /new", () => {
   it("creates the event and the organizer participant atomically", async () => {
-    const created = await createEvent({ title: "夏の東京オフ会" });
+    // ブラウザの <form method="post"> 送信(Origin: null)を模した経路でも
+    // 通ることを確認する。
+    const created = await createEvent({
+      title: "夏の東京オフ会",
+      useBrowserForm: true,
+    });
     expect(created.response.status).toBe(200);
 
     const db = createDb(env.DB);

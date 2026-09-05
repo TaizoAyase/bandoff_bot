@@ -54,9 +54,12 @@ describe("POST /e/:slug/participants", () => {
     const slotId = await firstSlotId(created.slug);
 
     const client = await joinAsViewer(created.slug, created.joinCode);
+    // ブラウザの <form method="post"> 送信(Origin: null)を模した経路でも
+    // 通ることを確認する。
     const result = await registerParticipant(client, created.slug, {
       displayName: "鈴木",
       slot: slotId,
+      useBrowserForm: true,
     });
     expect(result.response.status).toBe(200);
     expect(result.html).toContain("に入りました");
