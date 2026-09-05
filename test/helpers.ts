@@ -248,11 +248,25 @@ export async function createSong(
  * join/leave のテストで枠 id が必要なときに使う。
  */
 export async function findFirstSongSlotIds(slug: string): Promise<string[]> {
+  const { takeId } = await findFirstSongAndTakeId(slug);
+  const db = createDb(env.DB);
+  const slotRows = await db
+    .select()
+    .from(slot)
+    .where(eq(slot.takeId, takeId))
+    .orderBy(asc(slot.sortOrder));
+  return slotRows.map((s) => s.id);
+}
+
+/** イベント内の最初の曲の id と、その Take1 の id を取得する。 */
+export async function findFirstSongAndTakeId(
+  slug: string,
+): Promise<{ songId: string; takeId: string }> {
   const db = createDb(env.DB);
   const eventRows = await db.select().from(eventTable).where(eq(eventTable.slug, slug));
   const eventId = eventRows[0]?.id;
   if (!eventId) {
-    throw new Error(`findFirstSongSlotIds: event not found for slug ${slug}`);
+    throw new Error(`findFirstSongAndTakeId: event not found for slug ${slug}`);
   }
   const songRows = await db
     .select()
@@ -261,7 +275,7 @@ export async function findFirstSongSlotIds(slug: string): Promise<string[]> {
     .orderBy(asc(song.createdAt), asc(song.id));
   const songId = songRows[0]?.id;
   if (!songId) {
-    throw new Error("findFirstSongSlotIds: no song found for event");
+    throw new Error("findFirstSongAndTakeId: no song found for event");
   }
   const takeRows = await db
     .select()
@@ -270,12 +284,63 @@ export async function findFirstSongSlotIds(slug: string): Promise<string[]> {
     .orderBy(asc(take.sortOrder), asc(take.id));
   const takeId = takeRows[0]?.id;
   if (!takeId) {
-    throw new Error("findFirstSongSlotIds: no take found for song");
+    throw new Error("findFirstSongAndTakeId: no take found for song");
   }
-  const slotRows = await db
-    .select()
-    .from(slot)
-    .where(eq(slot.takeId, takeId))
-    .orderBy(asc(slot.sortOrder));
-  return slotRows.map((s) => s.id);
+  return { songId, takeId };
+}
+
+/** `POST /songs` のリダイレクト先(`/e/:slug/#song-{id}`)から曲 id を取り出す。 */
+export function extractSongId(response: Response): string {
+  const location = response.headers.get("location") ?? "";
+  const match = /#song-(.+)$/.exec(location);
+  const id = match?.[1];
+  if (!id) {
+    throw new Error(`extractSongId: could not parse song id from "${location}"`);
+  }
+  return id;
+}
+
+/** `/e/:slug/organizer/login` に POST して主催者フラグを立てる。 */
+export async function loginAsOrganizer(
+  client: TestClient,
+  slug: string,
+  organizerPassword: string,
+): Promise<Response> {
+  return client.post(`/e/${slug}/organizer/login`, { password: organizerPassword });
+}
+
+/** イベントの `status` を直接 "closed" に更新する(DB を直接操作)。 */
+export async function closeEvent(slug: string): Promise<void> {
+  const db = createDb(env.DB);
+  await db
+    .update(eventTable)
+    .set({ status: "closed" })
+    .where(eq(eventTable.slug, slug));
+}
+
+/** `/e/:slug/songs/:id/takes` に POST して Take を追加する。 */
+export function createTake(
+  client: TestClient,
+  slug: string,
+  songId: string,
+): Promise<Response> {
+  return client.post(`/e/${slug}/songs/${songId}/takes`);
+}
+
+export interface CreateSlotOptions {
+  instrument?: string;
+  note?: string;
+}
+
+/** `/e/:slug/takes/:id/slots` に POST して枠を追加する。 */
+export function createSlot(
+  client: TestClient,
+  slug: string,
+  takeId: string,
+  options: CreateSlotOptions = {},
+): Promise<Response> {
+  return client.post(`/e/${slug}/takes/${takeId}/slots`, {
+    instrument: options.instrument ?? "Cho",
+    note: options.note ?? "",
+  });
 }

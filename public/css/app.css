@@ -179,3 +179,100 @@ textarea {
 .slot-row input {
   flex: 1;
 }
+
+/* 曲カードのヘッダ・下部アクション */
+.song-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.song-header .song-title {
+  margin: 0;
+}
+
+.song-edit-link {
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.song-actions,
+.take-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 0.9em;
+}
+
+/* 見た目上はリンク・ボタンと区別しないインライン送信フォーム。 */
+.inline-form {
+  display: inline;
+  margin: 0;
+}
+
+.inline-form button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #2563eb;
+  cursor: pointer;
+  font: inherit;
+}
+
+.slot-action-proxy-join {
+  display: flex;
+  gap: 4px;
+}
+
+/* 参加者一覧・自分のエントリー一覧 */
+.participant-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.participant-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #eee;
+}
+
+.participant-row:first-child {
+  border-top: none;
+}
+
+.participant-instruments {
+  color: #666;
+}
+
+.my-assignment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.my-assignment-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.my-assignment-row .take-ordinal {
+  color: #666;
+}
+
+.my-assignment-row .slot-label {
+  font-weight: bold;
+  margin-left: auto;
+}
+
+/* 主催者画面 */
+.join-code-display {
+  font-size: 1.2em;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}

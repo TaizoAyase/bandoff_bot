@@ -3,6 +3,7 @@ import {
   LIMITS,
   normalizeJoinCode,
   validateDisplayName,
+  validateEventEditForm,
   validateJoinCode,
   validateNewEventForm,
   validateOrganizerPassword,
@@ -191,6 +192,38 @@ describe("validateSlotForm", () => {
   it("rejects a note over the 50 character limit", () => {
     const result = validateSlotForm({ instrument: "Gt", note: "a".repeat(51) });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("validateEventEditForm", () => {
+  const validInput = {
+    title: "テストオフ会",
+    region: "東京",
+    startsAt: "2026-09-05T19:00",
+    place: "スタジオA",
+    notes: "",
+    status: "upcoming",
+  };
+
+  it("accepts a fully valid form", () => {
+    const result = validateEventEditForm(validInput);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe("upcoming");
+    }
+  });
+
+  it("accepts status=closed", () => {
+    const result = validateEventEditForm({ ...validInput, status: "closed" });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects an invalid status value", () => {
+    const result = validateEventEditForm({ ...validInput, status: "bogus" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.status).toBeDefined();
+    }
   });
 });
 

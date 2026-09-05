@@ -1,5 +1,6 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { newId } from "../../domain/ids";
+import { numberInstruments } from "../../domain/instruments";
 import type { Db } from "../client";
 import {
   assignment,
@@ -217,4 +218,297 @@ export async function countSongs(db: Db, eventId: string): Promise<number> {
     .from(song)
     .where(eq(song.eventId, eventId));
   return rows[0]?.count ?? 0;
+}
+
+export interface SongContext {
+  id: string;
+  eventId: string;
+  title: string;
+  artist: string | null;
+  refUrl: string | null;
+  songKey: string | null;
+  notes: string | null;
+  proposedBy: string;
+  /** この曲のどの Slot にも誰もエントリーしていないか。 */
+  hasAnyAssignment: boolean;
+}
+
+/**
+ * 曲を、編集・削除の権限判定に必要な事実(誰もエントリーしていないか)まで
+ * 含めて取得する。曲が存在しなければ null。
+ */
+export async function findSongContext(
+  db: Db,
+  songId: string,
+): Promise<SongContext | null> {
+  const rows = await db.select().from(song).where(eq(song.id, songId)).limit(1);
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const assignmentRows = await db
+    .select({ id: assignment.id })
+    .from(assignment)
+    .innerJoin(slot, eq(assignment.slotId, slot.id))
+    .innerJoin(take, eq(slot.takeId, take.id))
+    .where(eq(take.songId, songId))
+    .limit(1);
+
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    title: row.title,
+    artist: row.artist,
+    refUrl: row.refUrl,
+    songKey: row.songKey,
+    notes: row.notes,
+    proposedBy: row.proposedBy,
+    hasAnyAssignment: assignmentRows.length > 0,
+  };
+}
+
+export interface UpdateSongInput {
+  title: string;
+  artist: string;
+  refUrl: string;
+  songKey: string;
+  notes: string;
+}
+
+/** 曲情報(タイトル・アーティスト・参考URL・キー・備考)を編集する。枠構成は対象外。 */
+export async function updateSong(
+  db: Db,
+  songId: string,
+  input: UpdateSongInput,
+): Promise<void> {
+  await db
+    .update(song)
+    .set({
+      title: input.title,
+      artist: input.artist === "" ? null : input.artist,
+      refUrl: input.refUrl === "" ? null : input.refUrl,
+      songKey: input.songKey === "" ? null : input.songKey,
+      notes: input.notes === "" ? null : input.notes,
+    })
+    .where(eq(song.id, songId));
+}
+
+/** 曲を削除する。CASCADE により Take・Slot・Assignment も削除される。 */
+export async function deleteSong(db: Db, songId: string): Promise<void> {
+  await db.delete(song).where(eq(song.id, songId));
+}
+
+/** 曲が持つ Take の総数を数える(上限チェック用)。 */
+export async function countTakes(db: Db, songId: string): Promise<number> {
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(take)
+    .where(eq(take.songId, songId));
+  return rows[0]?.count ?? 0;
+}
+
+export interface CreateTakeFromFirstInput {
+  songId: string;
+  createdBy: string;
+  now: number;
+}
+
+/**
+ * Take1(sort_order が最小の Take)の枠構成(instrument・note・sort_order)を
+ * 空(担当者なし)で複製した新しい Take を追加する。曲が存在しない、または
+ * 1件も Take を持たない(通常は起こらない)場合は null を返す。
+ */
+export async function createTakeFromFirst(
+  db: Db,
+  input: CreateTakeFromFirstInput,
+): Promise<{ takeId: string } | null> {
+  const existingTakes = await db
+    .select()
+    .from(take)
+    .where(eq(take.songId, input.songId))
+    .orderBy(asc(take.sortOrder));
+  const first = existingTakes[0];
+  if (!first) {
+    return null;
+  }
+  const maxSortOrder = existingTakes.reduce((max, t) => Math.max(max, t.sortOrder), 0);
+
+  const sourceSlots = await db
+    .select()
+    .from(slot)
+    .where(eq(slot.takeId, first.id))
+    .orderBy(asc(slot.sortOrder));
+
+  const newTakeId = newId();
+  const newTakeValues = {
+    id: newTakeId,
+    songId: input.songId,
+    label: null,
+    sortOrder: maxSortOrder + 1,
+    createdBy: input.createdBy,
+    createdAt: input.now,
+  };
+
+  if (sourceSlots.length === 0) {
+    await db.insert(take).values(newTakeValues);
+    return { takeId: newTakeId };
+  }
+
+  const slotValues = sourceSlots.map((s) => ({
+    id: newId(),
+    takeId: newTakeId,
+    instrument: s.instrument,
+    note: s.note,
+    sortOrder: s.sortOrder,
+    createdBy: input.createdBy,
+    createdAt: input.now,
+  }));
+
+  await db.batch([
+    db.insert(take).values(newTakeValues),
+    db.insert(slot).values(slotValues),
+  ]);
+  return { takeId: newTakeId };
+}
+
+/** Take を削除する。CASCADE により Slot・Assignment も削除される。 */
+export async function deleteTake(db: Db, takeId: string): Promise<void> {
+  await db.delete(take).where(eq(take.id, takeId));
+}
+
+export interface TakeContext {
+  id: string;
+  songId: string;
+  song: { id: string; eventId: string; title: string };
+  /** この曲が持つ Take の総数。 */
+  takeCount: number;
+  /** この Take 内の全 Slot が空か。 */
+  allSlotsEmpty: boolean;
+}
+
+/**
+ * Take を、その曲・イベント・削除可否の判定に必要な事実まで含めて取得する。
+ * 呼び出し側は `song.eventId` を今リクエストしているイベントの id と
+ * 必ず照合すること。
+ */
+export async function findTakeWithContext(
+  db: Db,
+  takeId: string,
+): Promise<TakeContext | null> {
+  const rows = await db
+    .select({
+      takeId: take.id,
+      songId: take.songId,
+      songEventId: song.eventId,
+      songTitle: song.title,
+    })
+    .from(take)
+    .innerJoin(song, eq(take.songId, song.id))
+    .where(eq(take.id, takeId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const [countRows, filledRows] = await db.batch([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(take)
+      .where(eq(take.songId, row.songId)),
+    db
+      .select({ id: assignment.id })
+      .from(assignment)
+      .innerJoin(slot, eq(assignment.slotId, slot.id))
+      .where(eq(slot.takeId, takeId))
+      .limit(1),
+  ]);
+
+  return {
+    id: row.takeId,
+    songId: row.songId,
+    song: { id: row.songId, eventId: row.songEventId, title: row.songTitle },
+    takeCount: countRows[0]?.count ?? 0,
+    allSlotsEmpty: filledRows.length === 0,
+  };
+}
+
+/** Take が持つ Slot の総数を数える(上限チェック用)。 */
+export async function countSlots(db: Db, takeId: string): Promise<number> {
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(slot)
+    .where(eq(slot.takeId, takeId));
+  return rows[0]?.count ?? 0;
+}
+
+export interface CreateSlotInput {
+  takeId: string;
+  instrument: string;
+  note: string;
+  createdBy: string;
+  now: number;
+}
+
+/** Take に新しい空の枠を追加する。`sort_order` は既存の最大値+1。 */
+export async function createSlot(
+  db: Db,
+  input: CreateSlotInput,
+): Promise<{ slotId: string }> {
+  const maxRows = await db
+    .select({ max: sql<number | null>`max(sort_order)` })
+    .from(slot)
+    .where(eq(slot.takeId, input.takeId));
+  const nextSortOrder = (maxRows[0]?.max ?? 0) + 1;
+
+  const slotId = newId();
+  await db.insert(slot).values({
+    id: slotId,
+    takeId: input.takeId,
+    instrument: input.instrument,
+    note: input.note === "" ? null : input.note,
+    sortOrder: nextSortOrder,
+    createdBy: input.createdBy,
+    createdAt: input.now,
+  });
+  return { slotId };
+}
+
+export interface MyAssignmentItem {
+  songId: string;
+  songTitle: string;
+  /** その曲の Take が2件以上のときだけ値を持つ(「n回目」の表示可否)。 */
+  takeOrdinal: number | null;
+  /** `Gt1`/`Gt2` のように自動採番済みの枠ラベル。 */
+  slotLabel: string;
+}
+
+/**
+ * 既に `loadEventTree` で取得した木構造から、指定した participant の
+ * エントリーだけを「曲名 / n回目(あれば) / 枠ラベル」の形で抜き出す。
+ * `/me`(自分のエントリー一覧)専用の純粋な変換で、DB へは触れない。
+ */
+export function deriveMyAssignments(
+  songs: SongNode[],
+  participantId: string,
+): MyAssignmentItem[] {
+  const items: MyAssignmentItem[] = [];
+  for (const s of songs) {
+    const showOrdinal = s.takes.length > 1;
+    s.takes.forEach((t, takeIndex) => {
+      const labels = numberInstruments(t.slots.map((slotNode) => slotNode.instrument));
+      t.slots.forEach((slotNode, slotIndex) => {
+        if (slotNode.assignment?.participantId === participantId) {
+          items.push({
+            songId: s.id,
+            songTitle: s.title,
+            takeOrdinal: showOrdinal ? takeIndex + 1 : null,
+            slotLabel: labels[slotIndex] ?? slotNode.instrument,
+          });
+        }
+      });
+    });
+  }
+  return items;
 }

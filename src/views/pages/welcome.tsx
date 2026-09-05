@@ -1,3 +1,4 @@
+import { PasteTextBlock } from "../components/paste-text-block";
 import { Layout } from "../layout";
 
 export interface WelcomePageProps {
@@ -45,16 +46,7 @@ export const WelcomePage = ({
         <p class="recovery-key">{recoveryKey}</p>
       </section>
 
-      <section class="card">
-        <h2>Discordに貼る文面</h2>
-        <p>URLと合言葉をまとめたものです。そのまま貼り付けられます。</p>
-        <textarea id="paste-text" class="paste-text" readonly rows={4}>
-          {pasteText}
-        </textarea>
-        <button type="button" data-action="copy-paste-text">
-          コピーする
-        </button>
-      </section>
+      <PasteTextBlock pasteText={pasteText} />
 
       <label class="checkbox-row">
         <input type="checkbox" id="memo-confirm" />

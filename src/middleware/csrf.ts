@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../env";
+import { errorResponse } from "../views/pages/error";
 
 // このアプリのフォームは GET / POST のみを使う(PUT/DELETE は将来の拡張に
 // 備えて含めているが未使用)。PATCH は想定していないため含めていない。
@@ -15,7 +16,7 @@ export const csrf: MiddlewareHandler<AppEnv> = async (c, next) => {
     const origin = c.req.header("origin");
     const expected = new URL(c.req.url).origin;
     if (!origin || origin !== expected) {
-      return c.text("Forbidden", 403);
+      return errorResponse(c, 403, "不正なリクエストです");
     }
   }
   await next();

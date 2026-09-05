@@ -58,6 +58,11 @@ export async function leaveSlot(db: Db, slotId: string): Promise<void> {
   await db.delete(assignment).where(eq(assignment.slotId, slotId));
 }
 
+/** 枠そのものを削除する。CASCADE により Assignment も削除される。 */
+export async function deleteSlot(db: Db, slotId: string): Promise<void> {
+  await db.delete(slot).where(eq(slot.id, slotId));
+}
+
 export interface SlotContext {
   slot: {
     id: string;

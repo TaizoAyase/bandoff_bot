@@ -5,15 +5,23 @@ import { renderPage } from "../render";
 
 export interface ErrorPageProps {
   message: string;
+  /** 「戻る」リンクの遷移先。既定は "/"。 */
+  backHref?: string;
+  /** 「戻る」リンクの文言。既定は "トップに戻る"。 */
+  backLabel?: string;
 }
 
 /** 汎用エラーページ。ステータスやエラーの内部事情は文言に出さない。 */
-export const ErrorPage = ({ message }: ErrorPageProps) => (
+export const ErrorPage = ({
+  message,
+  backHref = "/",
+  backLabel = "トップに戻る",
+}: ErrorPageProps) => (
   <Layout title="エラー" page="error">
     <main class="page">
       <h1>{message}</h1>
       <p>
-        <a href="/">トップに戻る</a>
+        <a href={backHref}>{backLabel}</a>
       </p>
     </main>
   </Layout>
@@ -24,8 +32,17 @@ export function errorResponse(
   c: Context,
   status: ContentfulStatusCode,
   message: string,
+  options?: { backHref?: string; backLabel?: string },
 ): Promise<Response> {
-  return renderPage(c, <ErrorPage message={message} />, status);
+  return renderPage(
+    c,
+    <ErrorPage
+      message={message}
+      backHref={options?.backHref}
+      backLabel={options?.backLabel}
+    />,
+    status,
+  );
 }
 
 /**

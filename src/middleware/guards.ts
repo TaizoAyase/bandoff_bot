@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../env";
+import { errorResponse } from "../views/pages/error";
 
 /**
  * 有効な viewer(イベントと一致する署名 cookie を持つ)を要求する。
@@ -25,10 +26,17 @@ export const requireParticipant: MiddlewareHandler<AppEnv> = async (c, next) => 
   await next();
 };
 
-/** 主催者フラグを要求する。無ければ 403。 */
+/**
+ * 主催者フラグを要求する。無ければ、主催者ログインへのリンク付きの
+ * 汎用エラーページを 403 で返す。
+ */
 export const requireOrganizer: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!c.get("viewer")?.isOrganizer) {
-    return c.text("Forbidden", 403);
+    const slug = c.get("event")?.slug ?? "";
+    return errorResponse(c, 403, "主催者のみ操作できます", {
+      backHref: `/e/${slug}/organizer/login`,
+      backLabel: "主催者ログインへ",
+    });
   }
   await next();
 };

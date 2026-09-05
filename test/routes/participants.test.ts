@@ -189,3 +189,31 @@ describe("independent viewers do not leak sessions", () => {
     expect(response.headers.get("location")).toBe(`/e/${created.slug}/join`);
   });
 });
+
+describe("GET /e/:slug/participants", () => {
+  it("lists display names and instruments in created_at order", async () => {
+    const created = await createEvent({ organizerDisplayName: "主催者太郎" });
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, {
+      displayName: "後から参加",
+      instruments: "Ba, Cho",
+    });
+
+    const response = await created.client.get(`/e/${created.slug}/participants`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    const organizerIndex = html.indexOf("主催者太郎");
+    const laterIndex = html.indexOf("後から参加");
+    expect(organizerIndex).toBeGreaterThan(-1);
+    expect(laterIndex).toBeGreaterThan(organizerIndex);
+    expect(html).toContain("Ba");
+    expect(html).toContain("Cho");
+  });
+
+  it("is readable by an unregistered viewer", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    const response = await client.get(`/e/${created.slug}/participants`);
+    expect(response.status).toBe(200);
+  });
+});

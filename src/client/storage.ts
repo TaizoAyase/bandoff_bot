@@ -51,3 +51,11 @@ export function loadRecoveryKey(slug: string): string | null {
     return null;
   }
 }
+
+export function clearRecoveryKey(slug: string): void {
+  try {
+    localStorage.removeItem(recoveryKeyKey(slug));
+  } catch {
+    // no-op
+  }
+}

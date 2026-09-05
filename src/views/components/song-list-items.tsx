@@ -1,3 +1,4 @@
+import type { ParticipantSummary } from "../../db/queries/participants";
 import type { SongNode } from "../../db/queries/songs";
 import { SongCard } from "./song-card";
 
@@ -5,6 +6,8 @@ export interface SongListItemsProps {
   slug: string;
   songs: SongNode[];
   currentParticipantId: string | null;
+  isOrganizer: boolean;
+  participants: ParticipantSummary[];
 }
 
 /**
@@ -15,6 +18,8 @@ export const SongListItems = ({
   slug,
   songs,
   currentParticipantId,
+  isOrganizer,
+  participants,
 }: SongListItemsProps) => {
   if (songs.length === 0) {
     return <p class="empty-notice">まだ曲が登録されていません。</p>;
@@ -22,7 +27,13 @@ export const SongListItems = ({
   return (
     <>
       {songs.map((song) => (
-        <SongCard slug={slug} song={song} currentParticipantId={currentParticipantId} />
+        <SongCard
+          slug={slug}
+          song={song}
+          currentParticipantId={currentParticipantId}
+          isOrganizer={isOrganizer}
+          participants={participants}
+        />
       ))}
     </>
   );

@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { findSlotWithContext, joinSlot } from "../db/queries/assignments";
-import { createParticipant, findByDisplayName } from "../db/queries/participants";
+import {
+  createParticipant,
+  findByDisplayName,
+  listParticipants,
+} from "../db/queries/participants";
 import { sha256Hex } from "../domain/crypto";
 import { onEntryChanged } from "../domain/hooks";
 import { newId, newRecoveryKey, newToken, normalizeRecoveryKey } from "../domain/ids";
@@ -10,13 +14,24 @@ import { validateParticipantForm } from "../domain/validation";
 import type { AppEnv } from "../env";
 import { requireOpenForParticipants, requireViewer } from "../middleware/guards";
 import { setSession } from "../middleware/session";
+import { notFoundResponse } from "../views/pages/error";
+import { ParticipantsPage } from "../views/pages/participants";
 import { RegisterPage } from "../views/pages/register";
 import { WelcomePage } from "../views/pages/welcome";
 import { renderPage } from "../views/render";
 import { formString } from "./form";
 
-/** 参加者登録(`/register`、`/participants`)。 */
+/** 参加者登録(`/register`、`/participants`)と参加者一覧(`/participants`)。 */
 export const participantsApp = new Hono<AppEnv>({ strict: false });
+
+participantsApp.get("/participants", requireViewer, async (c) => {
+  const event = c.get("event");
+  if (!event) {
+    return notFoundResponse(c);
+  }
+  const list = await listParticipants(c.get("db"), event.id);
+  return renderPage(c, ParticipantsPage({ slug: event.slug, participants: list }));
+});
 
 participantsApp.get(
   "/register",

@@ -3,9 +3,12 @@ import type { AppEnv } from "../env";
 import { eventMiddleware } from "../middleware/event";
 import { sessionMiddleware } from "../middleware/session";
 import { authApp } from "./auth";
+import { meApp } from "./me";
+import { organizerApp } from "./organizer";
 import { pagesApp } from "./pages";
 import { participantsApp } from "./participants";
 import { songsApp } from "./songs";
+import { takesApp } from "./takes";
 
 /**
  * `/e/:slug` 配下のサブアプリの骨格。
@@ -21,3 +24,6 @@ eventApp.route("/", authApp);
 eventApp.route("/", pagesApp);
 eventApp.route("/", participantsApp);
 eventApp.route("/", songsApp);
+eventApp.route("/", takesApp);
+eventApp.route("/", meApp);
+eventApp.route("/", organizerApp);

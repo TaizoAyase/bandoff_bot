@@ -69,3 +69,33 @@ export async function createEvent(db: Db, input: CreateEventInput): Promise<void
       .where(eq(event.id, input.eventId)),
   ]);
 }
+
+export interface UpdateEventInput {
+  title: string;
+  region: string;
+  startsAt: number;
+  place: string;
+  notes: string;
+  status: "upcoming" | "closed";
+  updatedAt: number;
+}
+
+/** 主催者画面からのイベント情報編集(タイトル・地域・日時・場所・備考・status)。 */
+export async function updateEvent(
+  db: Db,
+  eventId: string,
+  input: UpdateEventInput,
+): Promise<void> {
+  await db
+    .update(event)
+    .set({
+      title: input.title,
+      region: input.region,
+      startsAt: input.startsAt,
+      place: input.place,
+      notes: input.notes === "" ? null : input.notes,
+      status: input.status,
+      updatedAt: input.updatedAt,
+    })
+    .where(eq(event.id, eventId));
+}

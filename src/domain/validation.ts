@@ -259,6 +259,78 @@ export function validateNewEventForm(
   };
 }
 
+export type EventStatus = "upcoming" | "closed";
+
+function validateEventStatus(value: string): FieldResult<EventStatus> {
+  if (value === "upcoming" || value === "closed") {
+    return { ok: true, value };
+  }
+  return { ok: false, error: "募集状況の値が不正です" };
+}
+
+export interface EventEditFormInput {
+  title: string;
+  region: string;
+  startsAt: string;
+  place: string;
+  notes: string;
+  status: string;
+}
+
+export interface EventEditFormValue {
+  title: string;
+  region: string;
+  startsAt: number;
+  place: string;
+  notes: string;
+  status: EventStatus;
+}
+
+/** 主催者画面(`/organizer/event`)のイベント編集フォームを検証する。 */
+export function validateEventEditForm(
+  input: EventEditFormInput,
+): ValidationResult<EventEditFormValue> {
+  const errors: Record<string, string> = {};
+
+  const title = validateEventTitle(input.title);
+  if (!title.ok) errors.title = title.error;
+
+  const region = validateRegion(input.region);
+  if (!region.ok) errors.region = region.error;
+
+  const startsAt = validateStartsAt(input.startsAt);
+  if (!startsAt.ok) errors.startsAt = startsAt.error;
+
+  const place = validatePlace(input.place);
+  if (!place.ok) errors.place = place.error;
+
+  const notes = validateNotes(input.notes);
+  if (!notes.ok) errors.notes = notes.error;
+
+  const status = validateEventStatus(input.status);
+  if (!status.ok) errors.status = status.error;
+
+  if (Object.keys(errors).length > 0) {
+    return { ok: false, errors };
+  }
+
+  if (!title.ok || !region.ok || !startsAt.ok || !place.ok || !notes.ok || !status.ok) {
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    value: {
+      title: title.value,
+      region: region.value,
+      startsAt: startsAt.value,
+      place: place.value,
+      notes: notes.value,
+      status: status.value,
+    },
+  };
+}
+
 export interface SongFormInput {
   title: string;
   artist: string;

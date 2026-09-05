@@ -1,5 +1,7 @@
 import { Hono } from "hono";
+import { listParticipants } from "../db/queries/participants";
 import { loadEventTree } from "../db/queries/songs";
+import { isPast24h } from "../domain/time";
 import type { AppEnv } from "../env";
 import { requireViewer } from "../middleware/guards";
 import { SongListItems } from "../views/components/song-list-items";
@@ -17,13 +19,20 @@ pagesApp.get("/", requireViewer, async (c) => {
   }
   const db = c.get("db");
   const songs = await loadEventTree(db, event.id);
+  // 代理エントリー用の participant 一覧は organizer のときだけ取得する。
+  const participants = viewer.isOrganizer ? await listParticipants(db, event.id) : [];
+  const now = Math.floor(Date.now() / 1000);
   return renderPage(
     c,
     SongListPage({
       slug: event.slug,
       songs,
       currentParticipantId: viewer.participant?.id ?? null,
+      isOrganizer: viewer.isOrganizer,
+      participants,
       notice: parseSongListNotice(c.req.query("notice")),
+      past24h: isPast24h(event.startsAt, now),
+      status: event.status,
     }),
   );
 });
@@ -43,10 +52,13 @@ pagesApp.get("/fragments/songs", async (c) => {
   }
   const db = c.get("db");
   const songs = await loadEventTree(db, event.id);
+  const participants = viewer.isOrganizer ? await listParticipants(db, event.id) : [];
   const body = await SongListItems({
     slug: event.slug,
     songs,
     currentParticipantId: viewer.participant?.id ?? null,
+    isOrganizer: viewer.isOrganizer,
+    participants,
   });
   return c.html(body, 200, { "Cache-Control": "no-store" });
 });

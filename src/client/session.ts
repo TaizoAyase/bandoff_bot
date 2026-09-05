@@ -8,7 +8,8 @@ import { clearToken, loadToken, saveRecoveryKey, saveToken } from "./storage";
 /**
  * welcome ページ: `<main>` の `data-slug` / `data-token` / `data-recovery-key`
  * を localStorage へ保存し、「メモしました」チェックで「進む」ボタンを
- * 有効化する。「Discordに貼る文面」のコピーボタンも配線する。
+ * 有効化する。「Discordに貼る文面」のコピーボタンの配線は
+ * `src/client/ui.ts` の `initCopyPasteText()` が担当する(主催者画面と共有)。
  */
 export function initWelcomePage(): void {
   const root = document.querySelector("main");
@@ -37,19 +38,6 @@ export function initWelcomePage(): void {
       if (href) {
         location.href = href;
       }
-    });
-  }
-
-  const copyButton = document.querySelector('[data-action="copy-paste-text"]');
-  const pasteText = document.getElementById("paste-text");
-  if (
-    copyButton instanceof HTMLButtonElement &&
-    pasteText instanceof HTMLTextAreaElement
-  ) {
-    copyButton.addEventListener("click", () => {
-      navigator.clipboard?.writeText(pasteText.value).catch(() => {
-        // クリップボード API が使えない場合は何もしない(テキストは選択して手動コピー可能)。
-      });
     });
   }
 }

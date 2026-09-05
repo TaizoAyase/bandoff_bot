@@ -3,6 +3,11 @@ import { Layout } from "../layout";
 export interface ConfirmJoinPageProps {
   slug: string;
   slotId: string;
+  /**
+   * エントリーしようとしている participant の id。自分自身へのエントリーでも
+   * 主催者の代理エントリーでも、再送信時に対象を保持するため常に埋める。
+   */
+  targetParticipantId: string;
   message: string;
 }
 
@@ -11,13 +16,19 @@ export interface ConfirmJoinPageProps {
  * したときの確認画面(仕様 227〜235行目)。警告は出すが禁止しない。
  * `confirm=1` を付けて同じエントリー先へ再送信すると確定する。
  */
-export const ConfirmJoinPage = ({ slug, slotId, message }: ConfirmJoinPageProps) => (
+export const ConfirmJoinPage = ({
+  slug,
+  slotId,
+  targetParticipantId,
+  message,
+}: ConfirmJoinPageProps) => (
   <Layout title="確認 - bandoff" page="confirm">
     <main class="page">
       <h1>確認</h1>
       <p>{message}</p>
       <form method="post" action={`/e/${slug}/slots/${slotId}/join`}>
         <input type="hidden" name="confirm" value="1" />
+        <input type="hidden" name="participantId" value={targetParticipantId} />
         <div class="actions">
           <button type="submit">それでもエントリーする</button>
         </div>

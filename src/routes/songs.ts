@@ -6,10 +6,22 @@ import {
   leaveSlot,
 } from "../db/queries/assignments";
 import { findParticipantById } from "../db/queries/participants";
-import { countSongs, createSong } from "../db/queries/songs";
+import {
+  countSongs,
+  createSong,
+  deleteSong,
+  findSongContext,
+  updateSong,
+} from "../db/queries/songs";
 import { onEntryChanged } from "../domain/hooks";
 import { DEFAULT_SLOTS } from "../domain/instruments";
-import { canAddSong, canJoinAs, canLeave } from "../domain/permissions";
+import {
+  canAddSong,
+  canDeleteSong,
+  canEditSong,
+  canJoinAs,
+  canLeave,
+} from "../domain/permissions";
 import { LIMITS, validateSongForm, validateSongSlots } from "../domain/validation";
 import type { AppEnv } from "../env";
 import {
@@ -18,7 +30,8 @@ import {
   requireViewer,
 } from "../middleware/guards";
 import { ConfirmJoinPage } from "../views/pages/confirm";
-import { notFoundResponse } from "../views/pages/error";
+import { errorResponse, notFoundResponse } from "../views/pages/error";
+import { SongEditPage } from "../views/pages/song-edit";
 import { emptySongFormValues, SongFormPage } from "../views/pages/song-form";
 import { TakenPage } from "../views/pages/taken";
 import { renderPage } from "../views/render";
@@ -125,6 +138,107 @@ songsApp.post(
   },
 );
 
+songsApp.get("/songs/:id/edit", requireViewer, async (c) => {
+  const event = c.get("event");
+  const viewer = c.get("viewer");
+  if (!event || !viewer) {
+    return notFoundResponse(c);
+  }
+  const db = c.get("db");
+  const songId = c.req.param("id");
+  const context = await findSongContext(db, songId);
+  if (!context || context.eventId !== event.id) {
+    return notFoundResponse(c);
+  }
+  if (!canEditSong(actorFromViewer(viewer), { proposedBy: context.proposedBy }).ok) {
+    return errorResponse(c, 403, "曲を登録した本人か主催者のみ編集できます");
+  }
+  return renderPage(
+    c,
+    SongEditPage({
+      slug: event.slug,
+      songId,
+      values: {
+        title: context.title,
+        artist: context.artist ?? "",
+        refUrl: context.refUrl ?? "",
+        songKey: context.songKey ?? "",
+        notes: context.notes ?? "",
+      },
+      errors: {},
+    }),
+  );
+});
+
+songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c) => {
+  const event = c.get("event");
+  const viewer = c.get("viewer");
+  if (!event || !viewer) {
+    return notFoundResponse(c);
+  }
+  const db = c.get("db");
+  const songId = c.req.param("id");
+  const context = await findSongContext(db, songId);
+  if (!context || context.eventId !== event.id) {
+    return notFoundResponse(c);
+  }
+  const permission = canEditSong(actorFromViewer(viewer), {
+    proposedBy: context.proposedBy,
+  });
+  if (!permission.ok) {
+    return errorResponse(c, 403, permission.message);
+  }
+
+  const body = await c.req.parseBody();
+  const input = {
+    title: formString(body.title),
+    artist: formString(body.artist),
+    refUrl: formString(body.refUrl),
+    songKey: formString(body.songKey),
+    notes: formString(body.notes),
+  };
+  const result = validateSongForm(input);
+  if (!result.ok) {
+    return renderPage(
+      c,
+      SongEditPage({ slug: event.slug, songId, values: input, errors: result.errors }),
+      400,
+    );
+  }
+
+  await updateSong(db, songId, result.value);
+  return c.redirect(`/e/${event.slug}/#song-${songId}`, 303);
+});
+
+songsApp.post(
+  "/songs/:id/delete",
+  requireViewer,
+  requireOpenForParticipants,
+  async (c) => {
+    const event = c.get("event");
+    const viewer = c.get("viewer");
+    if (!event || !viewer) {
+      return notFoundResponse(c);
+    }
+    const db = c.get("db");
+    const songId = c.req.param("id");
+    const context = await findSongContext(db, songId);
+    if (!context || context.eventId !== event.id) {
+      return notFoundResponse(c);
+    }
+    const permission = canDeleteSong(actorFromViewer(viewer), {
+      proposedBy: context.proposedBy,
+      isEmpty: !context.hasAnyAssignment,
+    });
+    if (!permission.ok) {
+      return errorResponse(c, 403, permission.message);
+    }
+
+    await deleteSong(db, songId);
+    return c.redirect(`/e/${event.slug}/`, 303);
+  },
+);
+
 songsApp.post("/slots/:id/join", async (c) => {
   const event = c.get("event");
   const viewer = c.get("viewer");
@@ -143,8 +257,14 @@ songsApp.post("/slots/:id/join", async (c) => {
   }
 
   const slotId = c.req.param("id");
+  const body = await c.req.parseBody();
+  const requestedTargetId = formString(body.participantId);
+  // 代理エントリー(主催者が participantId を指定)でなければ、自分自身が
+  // 対象になる。organizer フラグのみで participant を持たない cookie の場合、
+  // 代理指定がなければ「自分」が存在しないため register へ誘導する。
+  const targetParticipantId = requestedTargetId || viewer.participant?.id;
 
-  if (!viewer.participant) {
+  if (!targetParticipantId) {
     return c.redirect(
       `/e/${event.slug}/register?slot=${encodeURIComponent(slotId)}`,
       303,
@@ -157,17 +277,13 @@ songsApp.post("/slots/:id/join", async (c) => {
     return notFoundResponse(c);
   }
 
-  const body = await c.req.parseBody();
-  const requestedTargetId = formString(body.participantId);
-  const targetParticipantId = requestedTargetId || viewer.participant.id;
-
   const permission = canJoinAs(actorFromViewer(viewer), targetParticipantId);
   if (!permission.ok) {
     return c.text("Forbidden", 403);
   }
 
   const targetParticipant =
-    targetParticipantId === viewer.participant.id
+    viewer.participant && targetParticipantId === viewer.participant.id
       ? viewer.participant
       : await findParticipantById(db, targetParticipantId);
   if (!targetParticipant || targetParticipant.eventId !== event.id) {
@@ -187,6 +303,7 @@ songsApp.post("/slots/:id/join", async (c) => {
         ConfirmJoinPage({
           slug: event.slug,
           slotId,
+          targetParticipantId,
           message: `同じ曲の別のパート(${existing.instrument})に既に入っています。${context.slot.instrument} にも入りますか？`,
         }),
       );
@@ -224,7 +341,10 @@ songsApp.post("/slots/:id/leave", async (c) => {
   if (!viewer) {
     return c.redirect(`/e/${event.slug}/join`, 303);
   }
-  if (!viewer.participant) {
+  // organizer フラグのみで participant を持たない cookie は、他人の
+  // エントリーを代理で辞退させられる(canLeave が isOrganizer を許可する)ため、
+  // ここでは register へ誘導しない。
+  if (!viewer.participant && !viewer.isOrganizer) {
     return c.redirect(`/e/${event.slug}/register`, 303);
   }
   if (event.status === "closed" && !viewer.isOrganizer) {
