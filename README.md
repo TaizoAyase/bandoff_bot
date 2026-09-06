@@ -127,6 +127,44 @@ test/
   引き継ぎコードはハッシュのみ保存する。
 - CI はこのフェーズには含まれない(次の計画で扱う)。
 
+### 名前の対応表
+
+このプロジェクトは名前が4つ登場し混同しやすいため、対応を整理しておく。
+
+| 何の名前か | 値 |
+|---|---|
+| GitHub リポジトリ | `bandoff_bot` |
+| npm パッケージ名(`package.json` の `name`) | `bandoff` |
+| Cloudflare の Worker 名 | `studio-parts` |
+| D1 データベース名 | `studio-parts` |
+
+Worker 名と D1 名だけ別にしてあるのは、公開 URL のホスト名からコミュニティや
+アプリの用途を推測されないようにするため。イベントの秘匿性は URL の slug が
+担保しており、ホスト名には依存していない。
+
+## 変更するときに壊してはいけない設計
+
+コードを触る前に知っておかないと、動くように見えて壊してしまう不変条件。
+
+- **CSRF 検査は `Sec-Fetch-Site` 優先**(`src/middleware/csrf.ts`)。
+  `Referrer-Policy: no-referrer` を返しているため、Fetch 仕様によりフォーム
+  送信など CORS モードでない POST の `Origin` は `null` になる。`Origin` の
+  一致だけで判定するとブラウザからの全フォーム送信が 403 になる(実際に
+  起きた)。
+- **OGP メタタグを出さない**(`src/views/layout.tsx`)。Discord に URL を貼ると
+  プロキシがページを取得して埋め込みを生成し、イベント名や日時が露出するため。
+- **1枠1人は条件付き INSERT と `UNIQUE(slot_id)` の二重で守る**
+  (`src/db/queries/assignments.ts`)。片方だけにしない。
+- **すべての書き込みルートで対象リソースの `event_id` を照合する**。他イベント
+  の ID を POST して跨いだ操作ができないようにするため。
+- **`SESSION_SECRET` を変更すると全員の cookie が無効になる**。詳細は
+  デプロイ手順5を参照。
+- **CSP により inline の `style` / `onclick` / `<script>` は使えない**。
+  データは `data-*` 属性で渡し、イベントは document への委譲リスナで処理する
+  (`src/client/ui.ts` の流儀)。
+- **テストの D1 の分離単位はファイル単位**(`@cloudflare/vitest-pool-workers`
+  の仕様、`isolatedStorage` は廃止済み)。詳細は上の `pnpm check` の節を参照。
+
 ## デプロイ
 
 Worker 名・D1 データベース名はどちらも `studio-parts` に揃えている(公開 URL は
@@ -221,6 +259,23 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
     --output "backup-$(date +%Y%m%d).sql"
   ```
 
+- バックアップからの復旧は、SQL ファイルを D1 に流し込む。
+
+  ```sh
+  pnpm exec wrangler d1 execute studio-parts --remote --file "backup-YYYYMMDD.sql"
+  ```
+
+  ただし `wrangler d1 export` が出力する SQL は `CREATE TABLE`(`IF NOT
+  EXISTS` なし)と `d1_migrations` テーブルへの素の `INSERT` を含むため、
+  既にマイグレーション済みの D1 に対して実行すると最初の数行
+  (`d1_migrations` への重複 INSERT)で `UNIQUE constraint failed` となって
+  止まる(ローカル D1 で確認済み)。**既存の本番 D1 に上書きで戻すことは
+  想定されていない。** 事故復旧の際は、新しい D1(`wrangler d1 create`)を
+  作り、そのまっさらな状態に流し込むほうが安全。**ただし新しい D1 を作った
+  だけでは終わらない。** 上の「4. D1 データベースを作成する」と同じ手順で
+  `wrangler.toml` の `database_id` を新しい D1 のものに書き換え、
+  `pnpm deploy` で再デプロイするまで、稼働中の Worker は古い(壊れた)D1 を
+  参照したままになる。
 - 無料枠の目安: Workers は 10万リクエスト/日、D1 は 5GB・500万行読み取り/日・
   10万行書き込み/日。
 - トラブル時のログ調査は `pnpm exec wrangler tail` でリアルタイムに見る
@@ -229,3 +284,35 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
   使える)。ただし画面には合言葉付きの URL や主催者キーを含むリクエストが
   そのまま表示されるため、共有画面やスクリーンショットへの映り込みに注意
   する。
+
+## トラブルシューティング
+
+- **テストが全ファイル失敗し `Failed to execute 'applyD1Migrations':
+  parameter 1 is not of type 'D1Database'` が出る** → `wrangler.toml` の
+  `[[d1_databases]]` の `binding` がコードの参照名(`DB`)と食い違っている。
+- **`pnpm test` が `styleText` 関連のエラーで起動しない** → 素の `node`
+  (v18)で実行している。mise の Node 22 を使う。
+  `~/.local/bin/mise exec -- pnpm test` のように呼ぶか、シェルで mise を
+  有効化する。
+- **`pnpm` が `libatomic.so.1` のエラーで起動しない** → mise 管理の pnpm
+  ではなく corepack の pnpm を使う(上の「なぜ corepack で pnpm を有効化
+  するか」を参照)。
+- **ローカルの D1 を作り直したい** → `.wrangler/state/v3/d1/` を削除して
+  `pnpm db:migrate:local`。`wrangler.toml` の `database_id` を変えると
+  ローカルの sqlite ファイルも別になるため、同じ現象が起きる。
+- **ブラウザからのフォーム送信が 403「不正なリクエストです」になる** →
+  CSRF 検査。上の「変更するときに壊してはいけない設計」を参照。
+
+## 実装していない機能
+
+フェーズ1(Web のみ)の範囲外のもの。仕様書 `docs/bandoff-spec.md` の10章に
+フェーズ2・3として記載があるものと、章としての言及はないが現時点で単に
+未実装のものが混ざっている。
+
+- Discord Bot(スラッシュコマンド、Interactions)= フェーズ2
+- エントリー変更の Discord Webhook 通知(`src/domain/hooks.ts` にフック地点
+  だけがあり no-op)
+- 告知の自動化 = フェーズ3
+- イベントの削除、参加者の削除(仕様書10章に言及はなく、単に未実装)
+- 動的ポーリング間隔、ETag/304(仕様書の判断基準に達したら検討)
+- CI(GitHub Actions)
