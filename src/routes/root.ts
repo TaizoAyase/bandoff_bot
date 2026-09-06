@@ -1,13 +1,13 @@
 import { Hono } from "hono";
 import { createEvent } from "../db/queries/events";
 import { DEFAULT_WORKSPACE_ID } from "../domain/constants";
-import { hashPassword, sha256Hex } from "../domain/crypto";
+import { sha256Hex } from "../domain/crypto";
 import {
+  newAccessKey,
   newId,
-  newRecoveryKey,
   newSlug,
   newToken,
-  normalizeRecoveryKey,
+  normalizeAccessKey,
 } from "../domain/ids";
 import { parseInstrumentsInput } from "../domain/instruments";
 import { buildPasteText } from "../domain/paste-text";
@@ -38,7 +38,6 @@ rootApp.post("/new", async (c) => {
     place: formString(body.place),
     notes: formString(body.notes),
     joinCode: formString(body.joinCode),
-    organizerPassword: formString(body.organizerPassword),
     organizerDisplayName: formString(body.organizerDisplayName),
   };
   const organizerInstrumentsRaw = formString(body.organizerInstruments);
@@ -61,11 +60,12 @@ rootApp.post("/new", async (c) => {
   const eventId = newId();
   const slug = newSlug();
   const organizerParticipantId = newId();
-  const organizerPwHash = await hashPassword(result.value.organizerPassword);
+  const organizerKey = newAccessKey();
+  const organizerKeyHash = await sha256Hex(normalizeAccessKey(organizerKey));
   const token = newToken();
   const tokenHash = await sha256Hex(token);
-  const recoveryKey = newRecoveryKey();
-  const recoveryKeyHash = await sha256Hex(normalizeRecoveryKey(recoveryKey));
+  const recoveryKey = newAccessKey();
+  const recoveryKeyHash = await sha256Hex(normalizeAccessKey(recoveryKey));
   const organizerInstruments = parseInstrumentsInput(organizerInstrumentsRaw);
 
   await createEvent(db, {
@@ -78,7 +78,7 @@ rootApp.post("/new", async (c) => {
     place: result.value.place,
     notes: result.value.notes,
     joinCode: result.value.joinCode,
-    organizerPwHash,
+    organizerKeyHash,
     organizerParticipantId,
     organizerDisplayName: result.value.organizerDisplayName,
     organizerInstruments,
@@ -102,5 +102,8 @@ rootApp.post("/new", async (c) => {
     result.value.joinCode,
   );
 
-  return renderPage(c, WelcomePage({ slug, token, recoveryKey, pasteText }));
+  return renderPage(
+    c,
+    WelcomePage({ slug, token, recoveryKey, pasteText, organizerKey }),
+  );
 });

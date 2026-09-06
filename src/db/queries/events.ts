@@ -18,7 +18,7 @@ export interface CreateEventInput {
   place: string;
   notes: string;
   joinCode: string;
-  organizerPwHash: string;
+  organizerKeyHash: string;
   organizerParticipantId: string;
   organizerDisplayName: string;
   organizerInstruments: string[];
@@ -48,7 +48,7 @@ export async function createEvent(db: Db, input: CreateEventInput): Promise<void
       notes: input.notes === "" ? null : input.notes,
       status: "upcoming",
       joinCode: input.joinCode,
-      organizerPwHash: input.organizerPwHash,
+      organizerKeyHash: input.organizerKeyHash,
       organizerParticipantId: null,
       createdAt: input.now,
       updatedAt: input.now,

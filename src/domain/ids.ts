@@ -6,9 +6,9 @@ const SLUG_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567"; // Base32 小文字
 const SLUG_LENGTH = 26; // 128bit を 5bit ずつ = 26文字(ceil(128/5))
 const SLUG_PATTERN = /^[a-z2-7]{26}$/;
 
-const RECOVERY_KEY_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // I/O/0/1 なし
-const RECOVERY_KEY_GROUP_LENGTH = 4;
-const RECOVERY_KEY_GROUPS = 3;
+const ACCESS_KEY_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // I/O/0/1 なし
+const ACCESS_KEY_GROUP_LENGTH = 4;
+const ACCESS_KEY_GROUPS = 3;
 
 /** UUID v4 の新規 id を生成する。 */
 export function newId(): string {
@@ -42,24 +42,25 @@ export function newToken(): string {
 }
 
 /**
- * 引き継ぎコードを生成する。誤読しにくい32文字セット(Base32 から I/O/0/1 を除去)で
- * `XXXX-XXXX-XXXX` 形式(60bit)。
+ * 引き継ぎコード・主催者キーを生成する。誤読しにくい32文字セット(Base32 から
+ * I/O/0/1 を除去)で `XXXX-XXXX-XXXX` 形式(60bit)。
  */
-export function newRecoveryKey(): string {
+export function newAccessKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
-  const chars = Array.from(bytes, (b) => RECOVERY_KEY_ALPHABET[b & 31]);
+  const chars = Array.from(bytes, (b) => ACCESS_KEY_ALPHABET[b & 31]);
   const groups: string[] = [];
-  for (let i = 0; i < RECOVERY_KEY_GROUPS; i++) {
-    const start = i * RECOVERY_KEY_GROUP_LENGTH;
-    groups.push(chars.slice(start, start + RECOVERY_KEY_GROUP_LENGTH).join(""));
+  for (let i = 0; i < ACCESS_KEY_GROUPS; i++) {
+    const start = i * ACCESS_KEY_GROUP_LENGTH;
+    groups.push(chars.slice(start, start + ACCESS_KEY_GROUP_LENGTH).join(""));
   }
   return groups.join("-");
 }
 
 /**
- * 引き継ぎコード入力を照合用に正規化する。大文字化し、ハイフンと空白を除去する。
+ * 引き継ぎコード・主催者キーの入力を照合用に正規化する。
+ * 大文字化し、ハイフンと空白を除去する。
  */
-export function normalizeRecoveryKey(input: string): string {
+export function normalizeAccessKey(input: string): string {
   return input.toUpperCase().replace(/[\s-]/g, "");
 }
 

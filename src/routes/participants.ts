@@ -13,7 +13,7 @@ import {
 import { deriveMyAssignments, loadEventTree } from "../db/queries/songs";
 import { sha256Hex } from "../domain/crypto";
 import { onEntryChanged } from "../domain/hooks";
-import { newId, newRecoveryKey, newToken, normalizeRecoveryKey } from "../domain/ids";
+import { newAccessKey, newId, newToken, normalizeAccessKey } from "../domain/ids";
 import { parseInstrumentsInput } from "../domain/instruments";
 import { buildPasteText } from "../domain/paste-text";
 import { canLeaveAll } from "../domain/permissions";
@@ -183,8 +183,8 @@ participantsApp.post(
     const participantId = newId();
     const token = newToken();
     const tokenHash = await sha256Hex(token);
-    const recoveryKey = newRecoveryKey();
-    const recoveryKeyHash = await sha256Hex(normalizeRecoveryKey(recoveryKey));
+    const recoveryKey = newAccessKey();
+    const recoveryKeyHash = await sha256Hex(normalizeAccessKey(recoveryKey));
     const instruments = parseInstrumentsInput(instrumentsRaw);
 
     await createParticipant(db, {

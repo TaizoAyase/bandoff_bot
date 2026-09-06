@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../../src/db/client";
-import { participant } from "../../src/db/schema";
+import { event as eventTable, participant } from "../../src/db/schema";
 import { closeEvent, createEvent, joinAsViewer, registerParticipant } from "../helpers";
 
 describe("GET /e/:slug/settings", () => {
@@ -132,5 +133,30 @@ describe("POST /e/:slug/settings/unbind", () => {
     const response = await client.post(`/e/${created.slug}/settings/unbind`);
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(`/e/${created.slug}/register`);
+  });
+
+  it("also clears the organizer flag, forbidding /organizer afterwards", async () => {
+    const created = await createEvent();
+    // createEvent の client は主催者(participant かつ o:true)を兼ねる。
+    const response = await created.client.post(`/e/${created.slug}/settings/unbind`);
+    expect(response.status).toBe(303);
+
+    const organizerPage = await created.client.get(`/e/${created.slug}/organizer`);
+    expect(organizerPage.status).toBe(403);
+
+    // 主催者の participant 自体は消えない(cookie の紐付けが外れるだけ)。
+    // 同一テストファイル内で D1 が共有されるため、eventId でスコープして確認する。
+    const db = createDb(env.DB);
+    const eventRows = await db
+      .select()
+      .from(eventTable)
+      .where(eq(eventTable.slug, created.slug));
+    const eventId = eventRows[0]?.id;
+    if (!eventId) throw new Error("event not found");
+    const rows = await db
+      .select()
+      .from(participant)
+      .where(eq(participant.eventId, eventId));
+    expect(rows.length).toBeGreaterThan(0);
   });
 });

@@ -16,7 +16,6 @@ export const emptyNewEventFormValues: NewEventFormInput = {
   place: "",
   notes: "",
   joinCode: "",
-  organizerPassword: "",
   organizerDisplayName: "",
 };
 
@@ -127,17 +126,7 @@ export const NewEventPage = ({ values, instruments, errors }: NewEventPageProps)
           <FieldError message={errors.joinCode} />
         </div>
 
-        <div class="field">
-          <label for="organizerPassword">主催者パスワード(編集・代理操作用)</label>
-          <input
-            id="organizerPassword"
-            type="password"
-            name="organizerPassword"
-            maxlength={LIMITS.ORGANIZER_PASSWORD_MAX}
-            required
-          />
-          <FieldError message={errors.organizerPassword} />
-        </div>
+        <p>主催者キーと引き継ぎコードは作成後に発行されます。</p>
 
         <div class="actions">
           <button type="submit">作成する</button>

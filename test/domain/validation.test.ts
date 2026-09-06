@@ -6,7 +6,6 @@ import {
   validateEventEditForm,
   validateJoinCode,
   validateNewEventForm,
-  validateOrganizerPassword,
   validateParticipantForm,
   validateRefUrl,
   validateSlotForm,
@@ -83,21 +82,6 @@ describe("normalizeJoinCode / validateJoinCode", () => {
   });
 });
 
-describe("validateOrganizerPassword", () => {
-  it("rejects passwords shorter than 4 characters", () => {
-    expect(validateOrganizerPassword("abc").ok).toBe(false);
-  });
-
-  it("rejects passwords longer than 64 characters", () => {
-    expect(validateOrganizerPassword("a".repeat(65)).ok).toBe(false);
-  });
-
-  it("accepts passwords within 4-64 characters", () => {
-    expect(validateOrganizerPassword("abcd").ok).toBe(true);
-    expect(validateOrganizerPassword("a".repeat(64)).ok).toBe(true);
-  });
-});
-
 describe("validateNewEventForm", () => {
   const validInput = {
     title: "テストオフ会",
@@ -106,7 +90,6 @@ describe("validateNewEventForm", () => {
     place: "スタジオA",
     notes: "",
     joinCode: "himitsu",
-    organizerPassword: "hunter2",
     organizerDisplayName: "主催者",
   };
 
@@ -123,7 +106,6 @@ describe("validateNewEventForm", () => {
       place: "",
       notes: "",
       joinCode: "",
-      organizerPassword: "",
       organizerDisplayName: "",
     });
     expect(result.ok).toBe(false);
@@ -135,7 +117,6 @@ describe("validateNewEventForm", () => {
           "startsAt",
           "place",
           "joinCode",
-          "organizerPassword",
           "organizerDisplayName",
         ].sort(),
       );

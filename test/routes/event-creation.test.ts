@@ -3,7 +3,12 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../../src/db/client";
 import { event, participant } from "../../src/db/schema";
-import { createEvent, createTestClient } from "../helpers";
+import {
+  createEvent,
+  createTestClient,
+  joinAsViewer,
+  registerParticipant,
+} from "../helpers";
 
 describe("POST /new", () => {
   it("creates the event and the organizer participant atomically", async () => {
@@ -39,7 +44,6 @@ describe("POST /new", () => {
       place: "スタジオA",
       notes: "",
       joinCode: "himitsu",
-      organizerPassword: "hunter2",
       organizerDisplayName: "主催者",
       organizerInstruments: "Gt",
     });
@@ -73,10 +77,40 @@ describe("POST /new", () => {
       place: "",
       notes: "",
       joinCode: "",
-      organizerPassword: "",
       organizerDisplayName: "",
       organizerInstruments: "",
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("welcome ページの主催者キー(作成経路のみに渡す)", () => {
+  const ORGANIZER_KEY_PATTERN =
+    /^[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}$/;
+
+  it("includes an organizer key matching the XXXX-XXXX-XXXX charset on the creation welcome page", async () => {
+    const created = await createEvent();
+    expect(created.html).toContain('data-copy-target="organizer-key"');
+    expect(created.organizerKey).toMatch(ORGANIZER_KEY_PATTERN);
+  });
+
+  it("does not include an organizer key on the participant registration welcome page", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    const { html } = await registerParticipant(client, created.slug, {
+      displayName: "登録テスト太郎",
+    });
+    expect(html).not.toContain("data-organizer-key");
+  });
+
+  it("does not include an organizer key on the recovery welcome page", async () => {
+    const created = await createEvent();
+    const client = createTestClient();
+    await client.post(`/e/${created.slug}/join`, { joinCode: created.joinCode });
+    const response = await client.post(`/e/${created.slug}/recover`, {
+      recoveryKey: created.recoveryKey,
+    });
+    const html = await response.text();
+    expect(html).not.toContain("data-organizer-key");
   });
 });

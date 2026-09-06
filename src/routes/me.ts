@@ -133,6 +133,8 @@ meApp.post("/settings/unbind", requireViewer, requireParticipant, async (c) => {
   if (!event || !viewer) {
     return notFoundResponse(c);
   }
-  await setSession(c, event.slug, { e: event.id, p: null, o: viewer.isOrganizer });
+  // 端末の紐付け解除は主催者フラグも含めて完全にこの端末を切り離す
+  // (主催者キーも localStorage から消える。initSettingsPage を参照)。
+  await setSession(c, event.slug, { e: event.id, p: null, o: false });
   return c.redirect(`/e/${event.slug}/`, 303);
 });

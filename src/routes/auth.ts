@@ -6,7 +6,7 @@ import {
   updateParticipantTokenHash,
 } from "../db/queries/participants";
 import { sha256Hex, timingSafeEqual } from "../domain/crypto";
-import { newToken, normalizeRecoveryKey } from "../domain/ids";
+import { newToken, normalizeAccessKey } from "../domain/ids";
 import { buildPasteText } from "../domain/paste-text";
 import { isRateLimited, RATE_LIMIT_WINDOW_SECONDS } from "../domain/rate-limit";
 import { normalizeJoinCode } from "../domain/validation";
@@ -145,7 +145,7 @@ authApp.post("/recover", requireViewer, async (c) => {
 
   const body = await c.req.parseBody();
   const rawInput = formString(body.recoveryKey);
-  const normalized = normalizeRecoveryKey(rawInput);
+  const normalized = normalizeAccessKey(rawInput);
   const hash = await sha256Hex(normalized);
 
   const found = await findByRecoveryKeyHash(db, event.id, hash);

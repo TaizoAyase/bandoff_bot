@@ -15,7 +15,6 @@ const NEW_EVENT_BODY = new URLSearchParams({
   place: "スタジオA",
   notes: "",
   joinCode: "himitsu",
-  organizerPassword: "hunter2",
   organizerDisplayName: "山田",
   organizerInstruments: "Gt",
 }).toString();

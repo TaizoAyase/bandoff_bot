@@ -5,10 +5,11 @@
  */
 
 import { startPolling } from "./polling";
-import { initWelcomePage, tryRebind } from "./session";
+import { initOrganizerLoginDone, initWelcomePage, tryRebind } from "./session";
 import {
   initConfirmDialogs,
   initCopyButtons,
+  initOrganizerPage,
   initSettingsPage,
   initSongForm,
   initVisibilityToggles,
@@ -23,6 +24,12 @@ const page = document.body.dataset.page;
 switch (page) {
   case "welcome":
     initWelcomePage();
+    break;
+  case "organizer-login-done":
+    initOrganizerLoginDone();
+    break;
+  case "organizer":
+    initOrganizerPage();
     break;
   case "song-list": {
     const root = document.querySelector("main");

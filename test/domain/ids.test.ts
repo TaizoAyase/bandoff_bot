@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   isValidSlug,
+  newAccessKey,
   newId,
-  newRecoveryKey,
   newSlug,
   newToken,
-  normalizeRecoveryKey,
+  normalizeAccessKey,
 } from "../../src/domain/ids";
 
 describe("newSlug", () => {
@@ -63,30 +63,30 @@ describe("newToken", () => {
   });
 });
 
-describe("newRecoveryKey", () => {
+describe("newAccessKey", () => {
   const ALLOWED =
     /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/;
 
   it("matches the XXXX-XXXX-XXXX format with the restricted charset", () => {
     for (let i = 0; i < 10_000; i++) {
-      expect(newRecoveryKey()).toMatch(ALLOWED);
+      expect(newAccessKey()).toMatch(ALLOWED);
     }
   });
 
   it("never contains ambiguous characters (I, O, 0, 1)", () => {
     for (let i = 0; i < 10_000; i++) {
-      const key = newRecoveryKey();
+      const key = newAccessKey();
       expect(key).not.toMatch(/[IO01]/);
     }
   });
 });
 
-describe("normalizeRecoveryKey", () => {
+describe("normalizeAccessKey", () => {
   it("uppercases and strips hyphens and whitespace", () => {
-    expect(normalizeRecoveryKey("k7qm-3xpt-9rvn")).toBe("K7QM3XPT9RVN");
+    expect(normalizeAccessKey("k7qm-3xpt-9rvn")).toBe("K7QM3XPT9RVN");
   });
 
   it("strips surrounding and internal whitespace", () => {
-    expect(normalizeRecoveryKey("  k7qm 3xpt-9rvn  ")).toBe("K7QM3XPT9RVN");
+    expect(normalizeAccessKey("  k7qm 3xpt-9rvn  ")).toBe("K7QM3XPT9RVN");
   });
 });

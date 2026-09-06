@@ -28,15 +28,16 @@ describe("GET /e/:slug/export.json", () => {
     expect(response.status).toBe(403);
   });
 
-  it("does not include join_code, hashes, or the organizer password hash", async () => {
+  it("does not include join_code, hashes, or the organizer key hash", async () => {
     const created = await createEvent();
     await createSong(created.client, created.slug, { title: "エクスポート対象曲" });
     const response = await created.client.get(`/e/${created.slug}/export.json`);
     const text = await response.text();
 
     expect(text).not.toContain(created.joinCode);
-    expect(text).not.toContain("organizer_pw_hash");
-    expect(text).not.toContain("organizerPwHash");
+    expect(text).not.toContain("organizer_key_hash");
+    expect(text).not.toContain("organizerKeyHash");
+    expect(text).not.toContain(created.organizerKey);
     expect(text).not.toContain("token_hash");
     expect(text).not.toContain("tokenHash");
     expect(text).not.toContain("recovery_key_hash");

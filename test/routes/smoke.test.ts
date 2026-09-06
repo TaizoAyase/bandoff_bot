@@ -78,7 +78,7 @@ describe("signed session cookie round trip", () => {
     notes: null,
     status: "upcoming",
     joinCode: "himitsu",
-    organizerPwHash: "x",
+    organizerKeyHash: "x",
     organizerParticipantId: null,
     createdAt: 0,
     updatedAt: 0,

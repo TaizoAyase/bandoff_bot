@@ -138,7 +138,6 @@ export interface CreateEventOptions {
   place?: string;
   notes?: string;
   joinCode?: string;
-  organizerPassword?: string;
   organizerDisplayName?: string;
   organizerInstruments?: string;
   /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
@@ -150,7 +149,8 @@ export interface CreatedEvent {
   client: TestClient;
   slug: string;
   joinCode: string;
-  organizerPassword: string;
+  /** 主催者キー(平文)。作成直後の welcome ページから取得する。 */
+  organizerKey: string;
   /** 主催者の端末トークン(平文)。 */
   token: string;
   /** 主催者の復帰キー(平文)。 */
@@ -174,7 +174,6 @@ export async function createEvent(
     place: options.place ?? "スタジオA",
     notes: options.notes ?? "",
     joinCode: options.joinCode ?? "himitsu",
-    organizerPassword: options.organizerPassword ?? "hunter2",
     organizerDisplayName: options.organizerDisplayName ?? "主催者",
     organizerInstruments: options.organizerInstruments ?? "Gt",
   };
@@ -184,7 +183,8 @@ export async function createEvent(
   const slug = extractDataAttr(html, "data-slug");
   const token = extractDataAttr(html, "data-token");
   const recoveryKey = extractDataAttr(html, "data-recovery-key");
-  if (!slug || !token || !recoveryKey) {
+  const organizerKey = extractDataAttr(html, "data-organizer-key");
+  if (!slug || !token || !recoveryKey || !organizerKey) {
     throw new Error(
       `createEvent: failed to parse welcome page (status=${response.status})`,
     );
@@ -193,7 +193,7 @@ export async function createEvent(
     client,
     slug,
     joinCode: values.joinCode,
-    organizerPassword: values.organizerPassword,
+    organizerKey,
     token,
     recoveryKey,
     response,
@@ -338,13 +338,16 @@ export function extractSongId(response: Response): string {
   return id;
 }
 
-/** `/e/:slug/organizer/login` に POST して主催者フラグを立てる。 */
+/**
+ * `/e/:slug/organizer/login` に POST して主催者フラグを立てる。
+ * 成功時は login-done ページ(200、`data-organizer-key` を含む)が返る。
+ */
 export async function loginAsOrganizer(
   client: TestClient,
   slug: string,
-  organizerPassword: string,
+  organizerKey: string,
 ): Promise<Response> {
-  return client.post(`/e/${slug}/organizer/login`, { password: organizerPassword });
+  return client.post(`/e/${slug}/organizer/login`, { organizerKey });
 }
 
 /** イベントの `status` を直接 "closed" に更新する(DB を直接操作)。 */

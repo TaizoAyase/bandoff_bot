@@ -15,16 +15,13 @@ import {
 } from "../helpers";
 
 describe("GET/POST /e/:slug/organizer/login", () => {
-  it("sets the organizer flag on a correct password and redirects to /organizer", async () => {
+  it("sets the organizer flag on a correct key and shows the login-done page", async () => {
     const created = await createEvent();
     const client = await joinAsViewer(created.slug, created.joinCode);
-    const response = await loginAsOrganizer(
-      client,
-      created.slug,
-      created.organizerPassword,
-    );
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(`/e/${created.slug}/organizer`);
+    const response = await loginAsOrganizer(client, created.slug, created.organizerKey);
+    expect(response.status).toBe(200);
+    const doneHtml = await response.text();
+    expect(doneHtml).toContain(`data-organizer-key="${created.organizerKey}"`);
 
     const organizerPage = await client.get(`/e/${created.slug}/organizer`);
     expect(organizerPage.status).toBe(200);
@@ -33,25 +30,32 @@ describe("GET/POST /e/:slug/organizer/login", () => {
     expect(html).toContain('data-copy-target="join-code-display"');
   });
 
-  it("returns 401 on a wrong password", async () => {
+  it("accepts the key in lowercase with hyphens stripped", async () => {
     const created = await createEvent();
     const client = await joinAsViewer(created.slug, created.joinCode);
-    const response = await loginAsOrganizer(client, created.slug, "wrong-password");
+    const normalized = created.organizerKey.toLowerCase().replace(/-/g, "");
+    const response = await loginAsOrganizer(client, created.slug, normalized);
+    expect(response.status).toBe(200);
+
+    const organizerPage = await client.get(`/e/${created.slug}/organizer`);
+    expect(organizerPage.status).toBe(200);
+  });
+
+  it("returns 401 on a wrong key", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    const response = await loginAsOrganizer(client, created.slug, "WRNG-WRNG-WRNG");
     expect(response.status).toBe(401);
   });
 
-  it("rate limits after 10 failures, even with the right password on the 11th try", async () => {
+  it("rate limits after 10 failures, even with the right key on the 11th try", async () => {
     const created = await createEvent();
     const client = await joinAsViewer(created.slug, created.joinCode);
     for (let i = 0; i < 10; i++) {
-      const response = await loginAsOrganizer(client, created.slug, "wrong-password");
+      const response = await loginAsOrganizer(client, created.slug, "WRNG-WRNG-WRNG");
       expect(response.status).toBe(401);
     }
-    const limited = await loginAsOrganizer(
-      client,
-      created.slug,
-      created.organizerPassword,
-    );
+    const limited = await loginAsOrganizer(client, created.slug, created.organizerKey);
     expect(limited.status).toBe(429);
   });
 });
@@ -139,7 +143,7 @@ describe("organizer フラグのみで participant がない cookie(p=null, o=tr
   it("can open the organizer page and edit the event", async () => {
     const created = await createEvent();
     const client = await joinAsViewer(created.slug, created.joinCode);
-    await loginAsOrganizer(client, created.slug, created.organizerPassword);
+    await loginAsOrganizer(client, created.slug, created.organizerKey);
 
     const organizerPage = await client.get(`/e/${created.slug}/organizer`);
     expect(organizerPage.status).toBe(200);
@@ -158,7 +162,7 @@ describe("organizer フラグのみで participant がない cookie(p=null, o=tr
   it("is redirected to /register when trying to add a song", async () => {
     const created = await createEvent();
     const client = await joinAsViewer(created.slug, created.joinCode);
-    await loginAsOrganizer(client, created.slug, created.organizerPassword);
+    await loginAsOrganizer(client, created.slug, created.organizerKey);
 
     const response = await createSong(client, created.slug, {
       title: "組織のみで曲登録",
@@ -177,7 +181,7 @@ describe("organizer フラグのみで participant がない cookie(p=null, o=tr
     if (!slotId) throw new Error("expected a slot");
 
     const organizerOnly = await joinAsViewer(created.slug, created.joinCode);
-    await loginAsOrganizer(organizerOnly, created.slug, created.organizerPassword);
+    await loginAsOrganizer(organizerOnly, created.slug, created.organizerKey);
     const response = await organizerOnly.post(
       `/e/${created.slug}/slots/${slotId}/join`,
     );
@@ -198,7 +202,7 @@ describe("organizer フラグのみで participant がない cookie(p=null, o=tr
     await participant.post(`/e/${created.slug}/slots/${slotId}/join`);
 
     const organizerOnly = await joinAsViewer(created.slug, created.joinCode);
-    await loginAsOrganizer(organizerOnly, created.slug, created.organizerPassword);
+    await loginAsOrganizer(organizerOnly, created.slug, created.organizerKey);
     const response = await organizerOnly.post(
       `/e/${created.slug}/slots/${slotId}/delete`,
     );
@@ -216,7 +220,7 @@ describe("organizer フラグのみで participant がない cookie(p=null, o=tr
     await participant.post(`/e/${created.slug}/slots/${slotId}/join`);
 
     const organizerOnly = await joinAsViewer(created.slug, created.joinCode);
-    await loginAsOrganizer(organizerOnly, created.slug, created.organizerPassword);
+    await loginAsOrganizer(organizerOnly, created.slug, created.organizerKey);
     const response = await organizerOnly.post(
       `/e/${created.slug}/slots/${slotId}/leave`,
     );

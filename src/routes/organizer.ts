@@ -3,7 +3,8 @@ import { countRecentFailures, recordFailure } from "../db/queries/auth-failures"
 import { updateEvent } from "../db/queries/events";
 import { listParticipants } from "../db/queries/participants";
 import { loadEventTree } from "../db/queries/songs";
-import { verifyPassword } from "../domain/crypto";
+import { sha256Hex, timingSafeEqual } from "../domain/crypto";
+import { normalizeAccessKey } from "../domain/ids";
 import { buildPasteText } from "../domain/paste-text";
 import { canEditEvent } from "../domain/permissions";
 import { isRateLimited, RATE_LIMIT_WINDOW_SECONDS } from "../domain/rate-limit";
@@ -15,6 +16,7 @@ import { setSession } from "../middleware/session";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { OrganizerPage } from "../views/pages/organizer";
 import { OrganizerLoginPage } from "../views/pages/organizer-login";
+import { OrganizerLoginDonePage } from "../views/pages/organizer-login-done";
 import { renderPage } from "../views/render";
 import { actorFromViewer } from "./actor";
 import { clientIp } from "./auth";
@@ -60,13 +62,16 @@ organizerApp.post("/organizer/login", requireViewer, async (c) => {
   }
 
   const body = await c.req.parseBody();
-  const password = formString(body.password);
-  const ok = await verifyPassword(password, event.organizerPwHash);
+  const organizerKeyInput = formString(body.organizerKey);
+  const ok = timingSafeEqual(
+    await sha256Hex(normalizeAccessKey(organizerKeyInput)),
+    event.organizerKeyHash,
+  );
   if (!ok) {
-    await recordFailure(db, event.id, ip, "organizer_pw", now);
+    await recordFailure(db, event.id, ip, "organizer_key", now);
     return renderPage(
       c,
-      OrganizerLoginPage({ slug: event.slug, error: "パスワードが違います" }),
+      OrganizerLoginPage({ slug: event.slug, error: "主催者キーが違います" }),
       401,
     );
   }
@@ -75,8 +80,15 @@ organizerApp.post("/organizer/login", requireViewer, async (c) => {
     e: event.id,
     p: viewer.participant?.id ?? null,
     o: true,
+    iat: now,
   });
-  return c.redirect(`/e/${event.slug}/organizer`, 303);
+  return renderPage(
+    c,
+    OrganizerLoginDonePage({
+      slug: event.slug,
+      organizerKey: organizerKeyInput.trim(),
+    }),
+  );
 });
 
 organizerApp.post("/organizer/logout", requireOrganizer, async (c) => {
@@ -172,7 +184,7 @@ organizerApp.get("/export.json", requireOrganizer, async (c) => {
   const participants = await listParticipants(db, event.id);
   const songs = await loadEventTree(db, event.id);
 
-  // join_code と organizer_pw_hash(合言葉・主催者PWのハッシュ)は含めない。
+  // join_code と organizer_key_hash(合言葉・主催者キーのハッシュ)は含めない。
   // participants / songs はそれぞれ token_hash・recovery_key_hash を持たない
   // 形で既に取得している(listParticipants / loadEventTree を参照)。
   const data = {

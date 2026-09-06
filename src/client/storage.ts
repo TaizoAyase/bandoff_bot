@@ -12,6 +12,10 @@ function recoveryKeyKey(slug: string): string {
   return `bandoff:${slug}:recoveryKey`;
 }
 
+function organizerKeyKey(slug: string): string {
+  return `bandoff:${slug}:organizerKey`;
+}
+
 export function saveToken(slug: string, token: string): void {
   try {
     localStorage.setItem(tokenKey(slug), token);
@@ -55,6 +59,30 @@ export function loadRecoveryKey(slug: string): string | null {
 export function clearRecoveryKey(slug: string): void {
   try {
     localStorage.removeItem(recoveryKeyKey(slug));
+  } catch {
+    // no-op
+  }
+}
+
+export function saveOrganizerKey(slug: string, organizerKey: string): void {
+  try {
+    localStorage.setItem(organizerKeyKey(slug), organizerKey);
+  } catch {
+    // no-op
+  }
+}
+
+export function loadOrganizerKey(slug: string): string | null {
+  try {
+    return localStorage.getItem(organizerKeyKey(slug));
+  } catch {
+    return null;
+  }
+}
+
+export function clearOrganizerKey(slug: string): void {
+  try {
+    localStorage.removeItem(organizerKeyKey(slug));
   } catch {
     // no-op
   }

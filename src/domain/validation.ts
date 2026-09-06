@@ -23,8 +23,6 @@ export const LIMITS = {
   NOTES_MAX: 500,
   JOIN_CODE_MIN: 1,
   JOIN_CODE_MAX: 32,
-  ORGANIZER_PASSWORD_MIN: 4,
-  ORGANIZER_PASSWORD_MAX: 64,
   INSTRUMENT_NAME_MAX: 20,
   SLOT_NOTE_MAX: 50,
   REGION_MAX: 20,
@@ -145,20 +143,6 @@ export function validateJoinCode(value: string): FieldResult<string> {
   return { ok: true, value: normalized };
 }
 
-/** 主催者パスワードを検証する(4〜64文字)。 */
-export function validateOrganizerPassword(value: string): FieldResult<string> {
-  if (
-    value.length < LIMITS.ORGANIZER_PASSWORD_MIN ||
-    value.length > LIMITS.ORGANIZER_PASSWORD_MAX
-  ) {
-    return {
-      ok: false,
-      error: `主催者パスワードは${LIMITS.ORGANIZER_PASSWORD_MIN}〜${LIMITS.ORGANIZER_PASSWORD_MAX}文字で入力してください`,
-    };
-  }
-  return { ok: true, value };
-}
-
 /** 開催日時(`<input type="datetime-local">` の値、JST)を検証する。 */
 export function validateStartsAt(value: string): FieldResult<number> {
   if (value.trim() === "") {
@@ -178,7 +162,6 @@ export interface NewEventFormInput {
   place: string;
   notes: string;
   joinCode: string;
-  organizerPassword: string;
   organizerDisplayName: string;
 }
 
@@ -189,7 +172,6 @@ export interface NewEventFormValue {
   place: string;
   notes: string;
   joinCode: string;
-  organizerPassword: string;
   organizerDisplayName: string;
 }
 
@@ -217,9 +199,6 @@ export function validateNewEventForm(
   const joinCode = validateJoinCode(input.joinCode);
   if (!joinCode.ok) errors.joinCode = joinCode.error;
 
-  const organizerPassword = validateOrganizerPassword(input.organizerPassword);
-  if (!organizerPassword.ok) errors.organizerPassword = organizerPassword.error;
-
   const organizerDisplayName = validateDisplayName(input.organizerDisplayName);
   if (!organizerDisplayName.ok) {
     errors.organizerDisplayName = organizerDisplayName.error;
@@ -238,7 +217,6 @@ export function validateNewEventForm(
     !place.ok ||
     !notes.ok ||
     !joinCode.ok ||
-    !organizerPassword.ok ||
     !organizerDisplayName.ok
   ) {
     return { ok: false, errors };
@@ -253,7 +231,6 @@ export function validateNewEventForm(
       place: place.value,
       notes: notes.value,
       joinCode: joinCode.value,
-      organizerPassword: organizerPassword.value,
       organizerDisplayName: organizerDisplayName.value,
     },
   };

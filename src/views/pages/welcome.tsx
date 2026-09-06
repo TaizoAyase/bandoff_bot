@@ -11,12 +11,17 @@ export interface WelcomePageProps {
   pasteText: string;
   /** エントリー結果があれば表示する(参加者登録直後、slot 指定があった場合)。 */
   entryResult?: string;
+  /**
+   * 主催者キー(平文)。イベント作成直後のみ渡される
+   * (参加者登録・引き継ぎコード復旧の経路では渡さない)。
+   */
+  organizerKey?: string;
 }
 
 /**
  * イベント作成直後、および参加者登録直後の welcome ページ。
- * 引き継ぎコードの表示・「メモしました」チェック・貼付文面のコピーは
- * `src/client/session.ts` の `initWelcomePage()` が配線する。
+ * 引き継ぎコード・主催者キーの表示・「メモしました」チェック・貼付文面の
+ * コピーは `src/client/session.ts` の `initWelcomePage()` が配線する。
  */
 export const WelcomePage = ({
   slug,
@@ -24,6 +29,7 @@ export const WelcomePage = ({
   recoveryKey,
   pasteText,
   entryResult,
+  organizerKey,
 }: WelcomePageProps) => (
   <Layout title="登録できました - bandoff" page="welcome">
     <main
@@ -31,10 +37,26 @@ export const WelcomePage = ({
       data-slug={slug}
       data-token={token}
       data-recovery-key={recoveryKey}
+      data-organizer-key={organizerKey}
     >
       <h1>登録できました</h1>
 
       {entryResult ? <p class="notice">{entryResult}</p> : null}
+
+      {organizerKey ? (
+        <section class="card">
+          <h2>主催者キー</h2>
+          <p>主催者画面に入るときと、他の人に主催者権限を渡すときに使います。</p>
+          <div class="copy-row">
+            <p class="recovery-key" id="organizer-key">
+              {organizerKey}
+            </p>
+            <button type="button" data-copy-target="organizer-key">
+              コピーする
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section class="card">
         <h2>引き継ぎコード</h2>
@@ -57,7 +79,9 @@ export const WelcomePage = ({
 
       <label class="checkbox-row">
         <input type="checkbox" id="memo-confirm" />
-        引き継ぎコードをメモしました
+        {organizerKey
+          ? "引き継ぎコードと主催者キーをメモしました"
+          : "引き継ぎコードをメモしました"}
       </label>
 
       <div class="actions">

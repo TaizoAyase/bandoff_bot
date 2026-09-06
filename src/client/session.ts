@@ -1,23 +1,33 @@
 /**
- * welcome ページでの端末トークン・引き継ぎコードの保存と、
+ * welcome ページでの端末トークン・引き継ぎコード・主催者キーの保存、
+ * 主催者ログイン直後ページでの主催者キーの保存、
  * 曲一覧ページでの端末トークンによる自動再結合(rebind)。
  */
 
-import { clearToken, loadToken, saveRecoveryKey, saveToken } from "./storage";
+import {
+  clearToken,
+  loadToken,
+  saveOrganizerKey,
+  saveRecoveryKey,
+  saveToken,
+} from "./storage";
 
 /**
- * welcome ページ: `<main>` の `data-slug` / `data-token` / `data-recovery-key`
- * を localStorage へ保存し、「メモしました」チェックで「進む」ボタンを
- * 有効化する。コピーボタンの配線は `src/client/ui.ts` の
- * `initCopyButtons()` が担当する(主催者画面・設定画面と共有)。
+ * welcome ページ: `<main>` の `data-slug` / `data-token` / `data-recovery-key` /
+ * `data-organizer-key`(あれば)を localStorage へ保存し、「メモしました」
+ * チェックで「進む」ボタンを有効化する。コピーボタンの配線は
+ * `src/client/ui.ts` の `initCopyButtons()` が担当する(主催者画面・設定画面と共有)。
  */
 export function initWelcomePage(): void {
   const root = document.querySelector("main");
   if (root instanceof HTMLElement) {
-    const { slug, token, recoveryKey } = root.dataset;
+    const { slug, token, recoveryKey, organizerKey } = root.dataset;
     if (slug && token && recoveryKey) {
       saveToken(slug, token);
       saveRecoveryKey(slug, recoveryKey);
+    }
+    if (slug && organizerKey) {
+      saveOrganizerKey(slug, organizerKey);
     }
   }
 
@@ -91,4 +101,24 @@ export async function tryRebind(): Promise<void> {
   } catch {
     // ネットワークエラーは無視する。
   }
+}
+
+/**
+ * 主催者ログイン直後ページ: `<main>` の `data-slug` / `data-organizer-key` を
+ * 読み、主催者キーを localStorage に保存してから主催者画面へ遷移する。
+ * JS が動かない環境ではページ内のリンクから進む。
+ */
+export function initOrganizerLoginDone(): void {
+  const root = document.querySelector("main");
+  if (!(root instanceof HTMLElement)) {
+    return;
+  }
+  const { slug, organizerKey } = root.dataset;
+  if (!slug) {
+    return;
+  }
+  if (organizerKey) {
+    saveOrganizerKey(slug, organizerKey);
+  }
+  location.replace(`/e/${slug}/organizer`);
 }

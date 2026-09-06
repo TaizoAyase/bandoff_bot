@@ -6,19 +6,20 @@ export interface OrganizerLoginPageProps {
   error?: string;
 }
 
-/** 主催者パスワード入力画面(`/e/:slug/organizer/login`)。 */
+/** 主催者キー入力画面(`/e/:slug/organizer/login`)。 */
 export const OrganizerLoginPage = ({ slug, error }: OrganizerLoginPageProps) => (
   <Layout title="主催者ログイン - bandoff" page="organizer-login">
     <main class="page">
-      <h1>主催者パスワードを入力してください</h1>
+      <h1>主催者キーを入力してください</h1>
       <form method="post" action={`/e/${slug}/organizer/login`}>
         <div class="field">
-          <label for="password">主催者パスワード</label>
+          <label for="organizerKey">主催者キー</label>
           <input
-            id="password"
-            type="password"
-            name="password"
+            id="organizerKey"
+            type="text"
+            name="organizerKey"
             autocomplete="off"
+            placeholder="XXXX-XXXX-XXXX"
             required
           />
           <FieldError message={error} />

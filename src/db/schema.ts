@@ -33,7 +33,7 @@ export const event = sqliteTable(
     notes: text("notes"),
     status: text("status").notNull().default("upcoming"),
     joinCode: text("join_code").notNull(),
-    organizerPwHash: text("organizer_pw_hash").notNull(),
+    organizerKeyHash: text("organizer_key_hash").notNull(),
     // 主催者自身の Participant への参照。event と participant は循環参照のため
     // コールバック形式で参照する。作成時は db.batch() で原子的に埋める。
     organizerParticipantId: text("organizer_participant_id").references(
@@ -159,7 +159,7 @@ export const authFailure = sqliteTable(
       .references(() => event.id, { onDelete: "cascade" }),
     ip: text("ip").notNull(),
     kind: text("kind", {
-      enum: ["join_code", "organizer_pw", "recovery_key"],
+      enum: ["join_code", "organizer_key", "recovery_key"],
     }).notNull(),
     createdAt: integer("created_at").notNull(),
   },

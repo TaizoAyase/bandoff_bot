@@ -1,12 +1,19 @@
 /**
  * JS 専用の小さな補助 UI。曲登録フォームのパート構成(枠)の増減、
  * 汎用コピーボタン、合言葉入力欄の表示切替、破壊的な操作の確認ダイアログ
- * (data-confirm)、設定画面での引き継ぎコード再表示・端末紐付け解除を担当する。
- * いずれも JS が動かない環境ではフォームの通常送信のみで動作は成立する
- * (確認ダイアログが出ない・コピーボタンが使えないだけ)。
+ * (data-confirm)、設定画面での引き継ぎコード再表示・端末紐付け解除、
+ * 主催者画面での主催者キー再表示を担当する。いずれも JS が動かない環境では
+ * フォームの通常送信のみで動作は成立する(確認ダイアログが出ない・
+ * コピーボタンが使えないだけ)。
  */
 
-import { clearRecoveryKey, clearToken, loadRecoveryKey } from "./storage";
+import {
+  clearOrganizerKey,
+  clearRecoveryKey,
+  clearToken,
+  loadOrganizerKey,
+  loadRecoveryKey,
+} from "./storage";
 
 // src/domain/validation.ts の LIMITS.MAX_SLOTS_PER_TAKE と合わせる。
 // クライアントバンドルは Worker 側のコードと別の tsconfig でビルドするため
@@ -199,6 +206,34 @@ export function initSettingsPage(): void {
     unbindForm.addEventListener("submit", () => {
       clearToken(slug);
       clearRecoveryKey(slug);
+      clearOrganizerKey(slug);
     });
+  }
+}
+
+/**
+ * 主催者画面: `#organizer-key-display` に localStorage の主催者キーを
+ * 差し込む(サーバーは平文の主催者キーを持たないため出せない)。
+ * localStorage に無ければコピーボタンを無効化する。
+ */
+export function initOrganizerPage(): void {
+  const root = document.querySelector("main");
+  const slug = root instanceof HTMLElement ? root.dataset.slug : undefined;
+  if (!slug) {
+    return;
+  }
+
+  const display = document.getElementById("organizer-key-display");
+  if (display instanceof HTMLElement) {
+    const key = loadOrganizerKey(slug);
+    display.textContent = key ?? "この端末には保存されていません。";
+    if (!key) {
+      const copyButton = document.querySelector(
+        '[data-copy-target="organizer-key-display"]',
+      );
+      if (copyButton instanceof HTMLButtonElement) {
+        copyButton.disabled = true;
+      }
+    }
   }
 }

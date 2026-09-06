@@ -25,11 +25,29 @@ export const OrganizerPage = ({
   pasteText,
 }: OrganizerPageProps) => (
   <Layout title="主催者設定 - bandoff" page="organizer">
-    <main class="page">
+    <main class="page" data-slug={slug}>
       <h1>主催者設定</h1>
       <p>
         <a href={`/e/${slug}/`}>← 曲一覧に戻る</a>
       </p>
+
+      <section class="card">
+        <h2>主催者キー</h2>
+        <div class="copy-row">
+          <p id="organizer-key-display" class="recovery-key">
+            確認中です…
+          </p>
+          <button type="button" data-copy-target="organizer-key-display">
+            コピーする
+          </button>
+        </div>
+        <p>
+          主催者画面に入るときと、他の人に主催者権限を渡すときに使います。
+          この端末に保存されていない場合は、
+          <a href={`/e/${slug}/organizer/login`}>もう一度主催者キーを入力する</a>
+          とこの端末にも保存されます。
+        </p>
+      </section>
 
       <section class="card">
         <h2>合言葉</h2>

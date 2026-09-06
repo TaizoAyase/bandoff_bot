@@ -1,6 +1,6 @@
 {
-  "id": "48b1cbc1-e729-4649-ab02-5929c226ab05",
-  "prevId": "11b99724-9f6e-48dd-a397-773cb2003b71",
+  "id": "4169931b-aa38-487e-9eb0-d9ab5d8c5272",
+  "prevId": "7d0f5f91-97e9-46f9-95f9-427e0dd31228",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -241,8 +241,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "organizer_pw_hash": {
-          "name": "organizer_pw_hash",
+        "organizer_key_hash": {
+          "name": "organizer_key_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": true,

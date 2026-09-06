@@ -32,7 +32,7 @@ CREATE TABLE `event` (
 	`notes` text,
 	`status` text DEFAULT 'upcoming' NOT NULL,
 	`join_code` text NOT NULL,
-	`organizer_pw_hash` text NOT NULL,
+	`organizer_key_hash` text NOT NULL,
 	`organizer_participant_id` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
