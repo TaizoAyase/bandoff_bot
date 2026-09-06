@@ -1,4 +1,4 @@
-name = "bandoff"
+name = "studio-parts"
 main = "src/index.ts"
 compatibility_date = "2026-09-04"
 
@@ -7,9 +7,15 @@ directory = "./public"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "bandoff"
-database_id = "c512c0cd-b8b5-4fb4-9af3-a58543afcbaa"
+database_name = "studio-parts"
+# 本番の D1 の ID。識別子であって認証情報ではない(アクセスにはアカウントの
+# API トークンが必要)ため、リポジトリに含めてよい。
+database_id = "85a1c700-2a0d-4ba4-b370-c28fca4e308e"
 migrations_dir = "migrations"
 
+# 本番のアクセスログに秘密 URL(合言葉付きの URL や主催者キーなど)が平文で
+# 残るため無効(仕様書「アクセスログに秘密 URL を平文で残さない」)。
+# `wrangler tail` は設定変更なしで使える。ただし画面に秘密 URL が表示されるので
+# 共有画面やスクリーンショットに注意。
 [observability]
 enabled = false

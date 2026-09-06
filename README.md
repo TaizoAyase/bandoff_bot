@@ -125,4 +125,107 @@ test/
 - タイムゾーンは日本時間固定。DB には UTC エポック秒で保存する。
 - 合言葉のみ平文保存(主催者画面で再表示するため)。主催者キー・端末トークン・
   引き継ぎコードはハッシュのみ保存する。
-- デプロイと CI はこのフェーズには含まれない(次の計画で扱う)。
+- CI はこのフェーズには含まれない(次の計画で扱う)。
+
+## デプロイ
+
+Worker 名・D1 データベース名はどちらも `studio-parts` に揃えている(公開 URL は
+`studio-parts.<アカウントのサブドメイン>.workers.dev`)。デプロイは手元からの
+`wrangler deploy` のみで、GitHub Actions などの CI は用意していない。
+
+### 1. Cloudflare アカウントを作る
+
+<https://dash.cloudflare.com/sign-up> から作成する。無料プランはクレジット
+カード登録不要。二要素認証の設定を推奨する。
+
+### 2. workers.dev のサブドメインを決める
+
+Cloudflare ダッシュボードの Workers & Pages から、アカウントにつき1つの
+`workers.dev` サブドメインを決める。**一度決めると後から変更しにくい。**
+公開 URL は `studio-parts.<このサブドメイン>.workers.dev` になる。
+
+### 3. wrangler にログインする
+
+```sh
+pnpm exec wrangler login
+```
+
+ブラウザが開いて認可を求められる。WSL2 などでブラウザが自動で開かない場合は、
+ターミナルに表示される URL を Windows 側のブラウザに貼り付ける。認可後の
+コールバックは `localhost:8976` で待ち受ける。
+
+### 4. D1 データベースを作成する
+
+```sh
+pnpm exec wrangler d1 create studio-parts --location apac
+```
+
+出力される `database_id` を `wrangler.toml` の
+`database_id = "PLACEHOLDER_REPLACE_AFTER_D1_CREATE"` の行に書き写す。
+
+**出力される `[[d1_databases]]` の設定ブロックをそのまま `wrangler.toml` に
+上書きしないこと。** 書き写すのは `database_id` の値だけでよい。`binding =
+"DB"` は変更しない。コードは `env.DB` を参照しているため、ここを書き換えると
+デプロイ自体は成功するがデータベースにアクセスできなくなり、DB に触る全ルート
+が実行時に失敗する。
+
+### 5. 本番用の `SESSION_SECRET` を登録する
+
+```sh
+openssl rand -base64 32
+pnpm exec wrangler secret put SESSION_SECRET
+```
+
+生成した値を `wrangler secret put` に貼り付けて登録する。**`.dev.vars` の
+ローカル用の値とは別の値にすること。** 後から値を変更すると全員の cookie が
+無効になり、参加者は合言葉の入力からやり直しになる。
+
+### 6. 本番 D1 にマイグレーションを適用する
+
+手順4で `database_id` を書き写していないと(プレースホルダ
+`PLACEHOLDER_REPLACE_AFTER_D1_CREATE` のままだと)、ここで失敗して止まる。
+
+```sh
+pnpm db:migrate:remote
+```
+
+### 7. デプロイする
+
+```sh
+pnpm deploy
+```
+
+lint・型チェック・テスト・クライアント JS のビルドを行ってから
+`wrangler deploy` を実行する(`public/js/` は gitignore されているため、
+ビルドを飛ばすとクライアント JS が欠けた状態で公開されてしまう)。この
+`database_id` も手順4で書き写していないと失敗して止まる。なお `pnpm
+deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド)は API を
+呼ばないため、`database_id` が不正な値のままでも成功してしまう点に注意する。
+
+### 8. デプロイ後の確認
+
+- `/` が 200 で返る
+- `/robots.txt` が `Disallow: /` を返す
+- `/js/main.js` が 200 で返る
+- `/new` からイベントを作成し、発行された合言葉でそのイベントに入れる
+- レスポンスに CSP・`X-Robots-Tag`・`Referrer-Policy` などのセキュリティ
+  ヘッダが付与されている
+
+### 9. 運用メモ
+
+- バックアップは月1回程度を目安に取る(仕様書 9.3)。上書きされないよう
+  ファイル名に日付を入れる。
+
+  ```sh
+  pnpm exec wrangler d1 export studio-parts --remote \
+    --output "backup-$(date +%Y%m%d).sql"
+  ```
+
+- 無料枠の目安: Workers は 10万リクエスト/日、D1 は 5GB・500万行読み取り/日・
+  10万行書き込み/日。
+- トラブル時のログ調査は `pnpm exec wrangler tail` でリアルタイムに見る
+  (`[observability]` の設定変更は不要。Real-time Logs は Workers Logs
+  の永続化設定とは独立した別機能で、`wrangler.toml` の変更なしにそのまま
+  使える)。ただし画面には合言葉付きの URL や主催者キーを含むリクエストが
+  そのまま表示されるため、共有画面やスクリーンショットへの映り込みに注意
+  する。

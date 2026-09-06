@@ -14,7 +14,10 @@
     "test": "vitest run",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 migrations apply bandoff --local",
+    "db:migrate:local": "wrangler d1 migrations apply studio-parts --local",
+    "db:migrate:remote": "wrangler d1 migrations apply studio-parts --remote",
+    "deploy": "pnpm check && pnpm build:client && wrangler deploy",
+    "deploy:dry": "pnpm build:client && wrangler deploy --dry-run",
     "types": "wrangler types"
   },
   "dependencies": {

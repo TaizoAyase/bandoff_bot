@@ -1,3 +1,5 @@
 # cookie 署名用の秘密鍵。以下で生成する:
 #   openssl rand -base64 32
+# 本番は `wrangler secret put SESSION_SECRET` で別途登録する。ローカルと
+# 同じ値を使い回さないこと。
 SESSION_SECRET=
