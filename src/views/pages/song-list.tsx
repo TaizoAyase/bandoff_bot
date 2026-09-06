@@ -76,7 +76,9 @@ export const SongListPage = ({
       {!currentParticipantId ? (
         <p class="notice">
           参加すると曲を追加できます。
-          <a href={`/e/${slug}/recover`}>別の端末で登録済みの方はこちら(復帰キー)</a>
+          <a href={`/e/${slug}/recover`}>
+            別の端末で登録済みの方はこちら(引き継ぎコード)
+          </a>
         </p>
       ) : null}
       {notice ? <p class="notice">{NOTICE_MESSAGES[notice]}</p> : null}

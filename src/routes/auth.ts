@@ -21,7 +21,7 @@ import { renderPage } from "../views/render";
 import { formString } from "./form";
 
 /**
- * 合言葉(join)、端末トークン再結合(rebind)、復帰キーによる復旧(recover)を
+ * 合言葉(join)、端末トークン再結合(rebind)、引き継ぎコードによる復旧(recover)を
  * 担当するルート。
  */
 export const authApp = new Hono<AppEnv>({ strict: false });
@@ -153,12 +153,12 @@ authApp.post("/recover", requireViewer, async (c) => {
     await recordFailure(db, event.id, ip, "recovery_key", now);
     return renderPage(
       c,
-      RecoverPage({ slug: event.slug, error: "復帰キーが正しくありません" }),
+      RecoverPage({ slug: event.slug, error: "引き継ぎコードが正しくありません" }),
       401,
     );
   }
 
-  // 復帰キー復旧時は新しい端末トークンを発行し、旧トークンのハッシュを
+  // 引き継ぎコード復旧時は新しい端末トークンを発行し、旧トークンのハッシュを
   // 置き換える(計画「確定した決定事項」37行目)。
   const token = newToken();
   const tokenHash = await sha256Hex(token);

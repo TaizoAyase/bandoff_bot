@@ -56,6 +56,7 @@ describe("POST /new", () => {
     expect(created.html).toContain(created.slug);
     expect(created.html).toContain("夏の東京オフ会");
     expect(created.html).toContain(created.joinCode);
+    expect(created.html).toContain('data-copy-target="recovery-key"');
   });
 
   it("does not include OGP meta tags", async () => {

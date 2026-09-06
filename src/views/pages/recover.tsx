@@ -7,19 +7,17 @@ export interface RecoverPageProps {
 }
 
 /**
- * 復帰キーによる復旧画面(`/e/:slug/recover`)。別端末からのアクセスや
+ * 引き継ぎコードによる復旧画面(`/e/:slug/recover`)。別端末からのアクセスや
  * localStorage 喪失時の救済手段(仕様 8.1)。
  */
 export const RecoverPage = ({ slug, error }: RecoverPageProps) => (
-  <Layout title="復帰キーで引き継ぐ - bandoff" page="recover">
+  <Layout title="引き継ぎコードで引き継ぐ - bandoff" page="recover">
     <main class="page">
-      <h1>復帰キーで引き継ぐ</h1>
-      <p>
-        別の端末で登録済みの場合、発行された復帰キー(引き継ぎコード)を入力してください。
-      </p>
+      <h1>引き継ぎコードで引き継ぐ</h1>
+      <p>別の端末で登録済みの場合、発行された引き継ぎコードを入力してください。</p>
       <form method="post" action={`/e/${slug}/recover`}>
         <div class="field">
-          <label for="recoveryKey">復帰キー</label>
+          <label for="recoveryKey">引き継ぎコード</label>
           <input
             id="recoveryKey"
             type="text"

@@ -26,6 +26,14 @@ export const JoinPage = ({ slug, error }: JoinPageProps) => (
           />
           <FieldError message={error} />
         </div>
+        <div class="checkbox-row">
+          <input
+            type="checkbox"
+            id="join-code-visible"
+            data-toggle-visibility="joinCode"
+          />
+          <label for="join-code-visible">合言葉を表示する</label>
+        </div>
         <div class="actions">
           <button type="submit">入る</button>
         </div>

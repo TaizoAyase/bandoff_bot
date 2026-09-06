@@ -1,24 +1,36 @@
 import { Hono } from "hono";
-import { findSlotWithContext, joinSlot } from "../db/queries/assignments";
+import {
+  findSlotWithContext,
+  joinSlot,
+  leaveAllSlots,
+} from "../db/queries/assignments";
 import {
   createParticipant,
   findByDisplayName,
+  findParticipantById,
   listParticipants,
 } from "../db/queries/participants";
+import { deriveMyAssignments, loadEventTree } from "../db/queries/songs";
 import { sha256Hex } from "../domain/crypto";
 import { onEntryChanged } from "../domain/hooks";
 import { newId, newRecoveryKey, newToken, normalizeRecoveryKey } from "../domain/ids";
 import { parseInstrumentsInput } from "../domain/instruments";
 import { buildPasteText } from "../domain/paste-text";
+import { canLeaveAll } from "../domain/permissions";
 import { validateParticipantForm } from "../domain/validation";
 import type { AppEnv } from "../env";
-import { requireOpenForParticipants, requireViewer } from "../middleware/guards";
+import {
+  requireOpenForParticipants,
+  requireOrganizer,
+  requireViewer,
+} from "../middleware/guards";
 import { setSession } from "../middleware/session";
-import { notFoundResponse } from "../views/pages/error";
-import { ParticipantsPage } from "../views/pages/participants";
+import { errorResponse, notFoundResponse } from "../views/pages/error";
+import { ParticipantsPage, parseParticipantsNotice } from "../views/pages/participants";
 import { RegisterPage } from "../views/pages/register";
 import { WelcomePage } from "../views/pages/welcome";
 import { renderPage } from "../views/render";
+import { actorFromViewer } from "./actor";
 import { formString } from "./form";
 
 /** 参加者登録(`/register`、`/participants`)と参加者一覧(`/participants`)。 */
@@ -26,11 +38,65 @@ export const participantsApp = new Hono<AppEnv>({ strict: false });
 
 participantsApp.get("/participants", requireViewer, async (c) => {
   const event = c.get("event");
-  if (!event) {
+  const viewer = c.get("viewer");
+  if (!event || !viewer) {
     return notFoundResponse(c);
   }
-  const list = await listParticipants(c.get("db"), event.id);
-  return renderPage(c, ParticipantsPage({ slug: event.slug, participants: list }));
+  const db = c.get("db");
+  const list = await listParticipants(db, event.id);
+  // 一括辞退ボタンの表示可否・確認文言に使うエントリー一覧は、organizer の
+  // ときだけ計算する(十数人規模のイベント想定なので都度計算でよい)。
+  const songs = viewer.isOrganizer ? await loadEventTree(db, event.id) : [];
+  const participants = list.map((p) => ({
+    ...p,
+    entries: viewer.isOrganizer ? deriveMyAssignments(songs, p.id) : [],
+  }));
+  return renderPage(
+    c,
+    ParticipantsPage({
+      slug: event.slug,
+      participants,
+      isOrganizer: viewer.isOrganizer,
+      notice: parseParticipantsNotice(c.req.query("notice")),
+    }),
+  );
+});
+
+participantsApp.post("/participants/:id/leave-all", requireOrganizer, async (c) => {
+  const event = c.get("event");
+  const viewer = c.get("viewer");
+  if (!event || !viewer) {
+    return notFoundResponse(c);
+  }
+  const db = c.get("db");
+  const targetParticipantId = c.req.param("id");
+  const target = await findParticipantById(db, targetParticipantId);
+  if (!target || target.eventId !== event.id) {
+    return notFoundResponse(c);
+  }
+
+  const permission = canLeaveAll(actorFromViewer(viewer));
+  if (!permission.ok) {
+    return errorResponse(c, 403, permission.message);
+  }
+
+  const songs = await loadEventTree(db, event.id);
+  const entries = deriveMyAssignments(songs, targetParticipantId);
+
+  await leaveAllSlots(db, { eventId: event.id, participantId: targetParticipantId });
+
+  for (const entry of entries) {
+    onEntryChanged({
+      type: "leave",
+      eventId: event.id,
+      participantId: targetParticipantId,
+      participantName: target.displayName,
+      songTitle: entry.songTitle,
+      slotLabel: entry.slotLabel,
+    });
+  }
+
+  return c.redirect(`/e/${event.slug}/participants?notice=left-all`, 303);
 });
 
 participantsApp.get(

@@ -33,7 +33,14 @@ export const OrganizerPage = ({
 
       <section class="card">
         <h2>合言葉</h2>
-        <p class="join-code-display">{joinCode}</p>
+        <div class="copy-row">
+          <p id="join-code-display" class="join-code-display">
+            {joinCode}
+          </p>
+          <button type="button" data-copy-target="join-code-display">
+            コピーする
+          </button>
+        </div>
       </section>
 
       <PasteTextBlock pasteText={pasteText} />

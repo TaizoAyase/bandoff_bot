@@ -27,6 +27,7 @@ describe("GET /e/:slug/settings", () => {
     const html = await response.text();
     expect(html).toContain('value="山田"');
     expect(html).toContain("紐付けを解除する");
+    expect(html).toContain('data-copy-target="recovery-key-display"');
   });
 });
 

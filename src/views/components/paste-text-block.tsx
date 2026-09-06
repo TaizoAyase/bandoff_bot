@@ -6,7 +6,7 @@ export interface PasteTextBlockProps {
 /**
  * 「Discordに貼る文面」の表示とコピーボタン。welcome ページ・主催者画面の
  * 両方から使う。コピー操作の配線は `src/client/ui.ts` の
- * `initCopyPasteText()` が担当する。
+ * `initCopyButtons()` が担当する。
  */
 export const PasteTextBlock = ({ pasteText }: PasteTextBlockProps) => (
   <section class="card">
@@ -15,7 +15,7 @@ export const PasteTextBlock = ({ pasteText }: PasteTextBlockProps) => (
     <textarea id="paste-text" class="paste-text" readonly rows={4}>
       {pasteText}
     </textarea>
-    <button type="button" data-action="copy-paste-text">
+    <button type="button" data-copy-target="paste-text">
       コピーする
     </button>
   </section>

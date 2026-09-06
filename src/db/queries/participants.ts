@@ -49,7 +49,7 @@ export async function findByDisplayName(db: Db, eventId: string, displayName: st
 
 /**
  * `(event_id, recovery_key_hash)` から Participant を1件取得する。
- * 復帰キーによる復旧(`/recover`)に使う。
+ * 引き継ぎコードによる復旧(`/recover`)に使う。
  */
 export async function findByRecoveryKeyHash(
   db: Db,
@@ -70,7 +70,7 @@ export async function findByRecoveryKeyHash(
 }
 
 /**
- * 復帰キーによる復旧時に、新しく発行した端末トークンのハッシュへ置き換える。
+ * 引き継ぎコードによる復旧時に、新しく発行した端末トークンのハッシュへ置き換える。
  * 旧トークンのハッシュはどの participant とも一致しなくなるため、
  * 以後 `/session/rebind` に旧トークンを渡しても 401 になる。
  */

@@ -160,6 +160,17 @@ export function canLeave(
   return { ok: false, message: "他の人のエントリーを辞退させる権限がありません" };
 }
 
+/**
+ * 参加者の全エントリーの一括辞退。仕様書には明記がないが、他人のエントリーの
+ * 辞退(`canLeave`)と同様に主催者のみ可とする(計画バッチA-3)。
+ */
+export function canLeaveAll(actor: Actor): PermissionResult {
+  if (actor.isOrganizer) {
+    return OK;
+  }
+  return { ok: false, message: "参加者の全エントリーを辞退させる権限がありません" };
+}
+
 /** イベント情報の編集。仕様 124行目: 参加者×・主催者○。 */
 export function canEditEvent(actor: Actor): PermissionResult {
   if (actor.isOrganizer) {

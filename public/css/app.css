@@ -101,6 +101,16 @@ textarea {
   letter-spacing: 0.05em;
 }
 
+/* 値(引き継ぎコード・主催者設定の合言葉等)とコピーボタンの横並び。
+   スマホ幅では折り返す。 */
+.copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
 .paste-text {
   width: 100%;
   padding: 8px;
@@ -236,7 +246,9 @@ textarea {
 .participant-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   padding: 8px 0;
   border-top: 1px solid #eee;
 }

@@ -1,5 +1,5 @@
 /**
- * welcome ページでの端末トークン・復帰キーの保存と、
+ * welcome ページでの端末トークン・引き継ぎコードの保存と、
  * 曲一覧ページでの端末トークンによる自動再結合(rebind)。
  */
 
@@ -8,8 +8,8 @@ import { clearToken, loadToken, saveRecoveryKey, saveToken } from "./storage";
 /**
  * welcome ページ: `<main>` の `data-slug` / `data-token` / `data-recovery-key`
  * を localStorage へ保存し、「メモしました」チェックで「進む」ボタンを
- * 有効化する。「Discordに貼る文面」のコピーボタンの配線は
- * `src/client/ui.ts` の `initCopyPasteText()` が担当する(主催者画面と共有)。
+ * 有効化する。コピーボタンの配線は `src/client/ui.ts` の
+ * `initCopyButtons()` が担当する(主催者画面・設定画面と共有)。
  */
 export function initWelcomePage(): void {
   const root = document.querySelector("main");

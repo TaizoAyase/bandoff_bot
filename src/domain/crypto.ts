@@ -84,7 +84,7 @@ async function derivePbkdf2(
   return new Uint8Array(bits);
 }
 
-/** 文字列の SHA-256 を16進文字列で返す(端末トークン・復帰キーのハッシュ保存用)。 */
+/** 文字列の SHA-256 を16進文字列で返す(端末トークン・引き継ぎコードのハッシュ保存用)。 */
 export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return Array.from(new Uint8Array(digest))

@@ -5,7 +5,7 @@ export interface WelcomePageProps {
   slug: string;
   /** 端末トークン(平文)。クライアント側で localStorage に保存する。 */
   token: string;
-  /** 復帰キー(平文で再表示できるのはこの画面限りで、サーバーはハッシュしか保持しない)。 */
+  /** 引き継ぎコード(平文で再表示できるのはこの画面限りで、サーバーはハッシュしか保持しない)。 */
   recoveryKey: string;
   /** 「Discordに貼る文面」(URLと合言葉)。 */
   pasteText: string;
@@ -15,7 +15,7 @@ export interface WelcomePageProps {
 
 /**
  * イベント作成直後、および参加者登録直後の welcome ページ。
- * 復帰キーの表示・「メモしました」チェック・貼付文面のコピーは
+ * 引き継ぎコードの表示・「メモしました」チェック・貼付文面のコピーは
  * `src/client/session.ts` の `initWelcomePage()` が配線する。
  */
 export const WelcomePage = ({
@@ -43,7 +43,14 @@ export const WelcomePage = ({
           <strong>必ずメモしてください。</strong>
           再表示は設定画面からいつでもできますが、この端末が生きている間に限ります。
         </p>
-        <p class="recovery-key">{recoveryKey}</p>
+        <div class="copy-row">
+          <p class="recovery-key" id="recovery-key">
+            {recoveryKey}
+          </p>
+          <button type="button" data-copy-target="recovery-key">
+            コピーする
+          </button>
+        </div>
       </section>
 
       <PasteTextBlock pasteText={pasteText} />

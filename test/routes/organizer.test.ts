@@ -30,6 +30,7 @@ describe("GET/POST /e/:slug/organizer/login", () => {
     expect(organizerPage.status).toBe(200);
     const html = await organizerPage.text();
     expect(html).toContain(created.joinCode);
+    expect(html).toContain('data-copy-target="join-code-display"');
   });
 
   it("returns 401 on a wrong password", async () => {

@@ -58,6 +58,34 @@ export async function leaveSlot(db: Db, slotId: string): Promise<void> {
   await db.delete(assignment).where(eq(assignment.slotId, slotId));
 }
 
+export interface LeaveAllSlotsInput {
+  eventId: string;
+  participantId: string;
+}
+
+/**
+ * 指定した participant の、指定イベント内の全エントリーを削除する
+ * (主催者による一括辞退)。1文の DELETE で event 境界を強制することで、
+ * 呼び出し側が他イベントの participant_id を渡しても何も削除されない
+ * ようにする。戻り値は削除した行数。
+ */
+export async function leaveAllSlots(
+  db: Db,
+  input: LeaveAllSlotsInput,
+): Promise<number> {
+  const result = await db.run(sql`
+    delete from assignment
+    where participant_id = ${input.participantId}
+      and slot_id in (
+        select slot.id from slot
+        join take on take.id = slot.take_id
+        join song on song.id = take.song_id
+        where song.event_id = ${input.eventId}
+      )
+  `);
+  return result.meta.changes;
+}
+
 /** 枠そのものを削除する。CASCADE により Assignment も削除される。 */
 export async function deleteSlot(db: Db, slotId: string): Promise<void> {
   await db.delete(slot).where(eq(slot.id, slotId));

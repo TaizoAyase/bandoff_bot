@@ -1,12 +1,19 @@
 import { env } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../../src/db/client";
-import { assignment, event as eventTable, participant } from "../../src/db/schema";
+import {
+  assignment,
+  event as eventTable,
+  participant,
+  slot,
+  take,
+} from "../../src/db/schema";
 import {
   createEvent,
   createSong,
   createTestClient,
+  extractSongId,
   findFirstSongSlotIds,
   joinAsViewer,
   registerParticipant,
@@ -17,6 +24,93 @@ async function firstSlotId(slug: string): Promise<string> {
   const id = ids[0];
   if (!id) throw new Error("slot not found");
   return id;
+}
+
+/**
+ * イベント(slug)内で表示名が完全一致する participant の id を取得する。
+ * このテストファイルは複数の `it` が同じ D1 インスタンスを共有するため
+ * (テストごとの分離はない)、`displayName` だけで検索すると別テストが
+ * 作った同名の参加者を誤って拾いうる。必ず event 単位で絞り込む。
+ */
+async function findParticipantIdInEvent(
+  slug: string,
+  displayName: string,
+): Promise<string> {
+  const db = createDb(env.DB);
+  const eventRows = await db.select().from(eventTable).where(eq(eventTable.slug, slug));
+  const eventId = eventRows[0]?.id;
+  if (!eventId) throw new Error(`event not found for slug ${slug}`);
+  const rows = await db
+    .select()
+    .from(participant)
+    .where(
+      and(eq(participant.eventId, eventId), eq(participant.displayName, displayName)),
+    );
+  const row = rows[0];
+  if (!row) throw new Error(`participant not found: ${displayName} in ${slug}`);
+  return row.id;
+}
+
+/** 指定した曲(の Take1)の枠 id を sort_order 順にすべて取得する。 */
+async function songSlotIds(songId: string): Promise<string[]> {
+  const db = createDb(env.DB);
+  const takeRows = await db.select().from(take).where(eq(take.songId, songId));
+  const takeId = takeRows[0]?.id;
+  if (!takeId) throw new Error(`songSlotIds: no take found for song ${songId}`);
+  const slotRows = await db
+    .select()
+    .from(slot)
+    .where(eq(slot.takeId, takeId))
+    .orderBy(asc(slot.sortOrder));
+  return slotRows.map((s) => s.id);
+}
+
+/**
+ * 一括辞退テスト用に、2曲(曲A・曲B)を作り、参加者「山田」を
+ * 曲Aの Gt1・曲Bの Ba にエントリーさせた状態を用意する。
+ * 主催者(created.client)は別に曲Aの Ba にエントリーしておき、
+ * 「他人のエントリーは残る」ことの確認に使う。
+ */
+async function setupForBulkLeave(displayName = "山田") {
+  const created = await createEvent();
+  const songAResponse = await createSong(created.client, created.slug, {
+    title: "曲A",
+  });
+  const songAId = extractSongId(songAResponse);
+  const songBResponse = await createSong(created.client, created.slug, {
+    title: "曲B",
+  });
+  const songBId = extractSongId(songBResponse);
+
+  const songASlots = await songSlotIds(songAId);
+  const songBSlots = await songSlotIds(songBId);
+
+  const client = await joinAsViewer(created.slug, created.joinCode);
+  await registerParticipant(client, created.slug, { displayName });
+  const participantId = await findParticipantIdInEvent(created.slug, displayName);
+
+  // 山田: 曲Aの Gt1(index0)、曲Bの Ba(index2)。
+  const gt1Slot = songASlots[0];
+  const baSlot = songBSlots[2];
+  if (!gt1Slot || !baSlot) throw new Error("expected slots");
+  await client.post(`/e/${created.slug}/slots/${gt1Slot}/join`);
+  await client.post(`/e/${created.slug}/slots/${baSlot}/join`);
+
+  // 主催者自身も曲Aの Ba にエントリーしておく(他人のエントリーとして残るか確認する)。
+  const organizerBaSlot = songASlots[2];
+  if (!organizerBaSlot) throw new Error("expected slot");
+  await created.client.post(`/e/${created.slug}/slots/${organizerBaSlot}/join`);
+
+  return {
+    ...created,
+    participantClient: client,
+    participantId,
+    songAId,
+    songBId,
+    songASlots,
+    songBSlots,
+    organizerBaSlot,
+  };
 }
 
 describe("GET /e/:slug/register", () => {
@@ -218,5 +312,181 @@ describe("GET /e/:slug/participants", () => {
     const client = await joinAsViewer(created.slug, created.joinCode);
     const response = await client.get(`/e/${created.slug}/participants`);
     expect(response.status).toBe(200);
+  });
+});
+
+describe("参加者一覧: 一括辞退ボタンの表示(GET /e/:slug/participants)", () => {
+  it("shows the leave-all form and its data-confirm to the organizer", async () => {
+    const setup = await setupForBulkLeave();
+    const response = await setup.client.get(`/e/${setup.slug}/participants`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain(
+      `action="/e/${setup.slug}/participants/${setup.participantId}/leave-all"`,
+    );
+    expect(html).toContain("全エントリーを辞退させる");
+    expect(html).toContain(
+      'data-confirm="山田さんの全エントリー(曲A: Gt1、曲B: Ba)を辞退させます"',
+    );
+  });
+
+  it("does not show the leave-all form to a non-organizer viewer", async () => {
+    const setup = await setupForBulkLeave();
+    const response = await setup.participantClient.get(`/e/${setup.slug}/participants`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).not.toContain("全エントリーを辞退させる");
+    expect(html).not.toContain("leave-all");
+  });
+
+  it("does not show the leave-all form for a participant with zero entries", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, { displayName: "枠なし太郎" });
+
+    const response = await created.client.get(`/e/${created.slug}/participants`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("枠なし太郎");
+    expect(html).not.toContain("全エントリーを辞退させる");
+  });
+
+  it("escapes a participant name containing < in the data-confirm attribute", async () => {
+    const setup = await setupForBulkLeave("<script>");
+    const response = await setup.client.get(`/e/${setup.slug}/participants`);
+    const html = await response.text();
+    expect(html).toContain(
+      'data-confirm="&lt;script&gt;さんの全エントリー(曲A: Gt1、曲B: Ba)を辞退させます"',
+    );
+    expect(html).not.toContain("<script>さんの全エントリー");
+  });
+});
+
+describe("POST /e/:slug/participants/:id/leave-all", () => {
+  it("removes only the target participant's assignments, leaving others intact", async () => {
+    const setup = await setupForBulkLeave();
+
+    const response = await setup.client.post(
+      `/e/${setup.slug}/participants/${setup.participantId}/leave-all`,
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      `/e/${setup.slug}/participants?notice=left-all`,
+    );
+
+    const db = createDb(env.DB);
+    const gt1Slot = setup.songASlots[0];
+    const baSlotB = setup.songBSlots[2];
+    if (!gt1Slot || !baSlotB) throw new Error("expected slots");
+
+    const targetAssignmentsA = await db
+      .select()
+      .from(assignment)
+      .where(eq(assignment.slotId, gt1Slot));
+    expect(targetAssignmentsA).toHaveLength(0);
+    const targetAssignmentsB = await db
+      .select()
+      .from(assignment)
+      .where(eq(assignment.slotId, baSlotB));
+    expect(targetAssignmentsB).toHaveLength(0);
+
+    // 他人(主催者)のエントリーは残る。
+    const organizerAssignments = await db
+      .select()
+      .from(assignment)
+      .where(eq(assignment.slotId, setup.organizerBaSlot));
+    expect(organizerAssignments).toHaveLength(1);
+
+    // 対象者自身の登録・曲は消えない。
+    const participantRows = await db
+      .select()
+      .from(participant)
+      .where(eq(participant.id, setup.participantId));
+    expect(participantRows).toHaveLength(1);
+    const songRows = await db.select().from(take).where(eq(take.songId, setup.songAId));
+    expect(songRows.length).toBeGreaterThan(0);
+  });
+
+  it("shows the 'left-all' notice after a successful bulk leave", async () => {
+    const setup = await setupForBulkLeave();
+    await setup.client.post(
+      `/e/${setup.slug}/participants/${setup.participantId}/leave-all`,
+    );
+    const response = await setup.client.get(
+      `/e/${setup.slug}/participants?notice=left-all`,
+    );
+    const html = await response.text();
+    expect(html).toContain("辞退させました");
+  });
+
+  it("returns 403 for a non-organizer and deletes nothing", async () => {
+    const setup = await setupForBulkLeave();
+    const response = await setup.participantClient.post(
+      `/e/${setup.slug}/participants/${setup.participantId}/leave-all`,
+    );
+    expect(response.status).toBe(403);
+
+    const db = createDb(env.DB);
+    const gt1Slot = setup.songASlots[0];
+    if (!gt1Slot) throw new Error("expected slot");
+    const rows = await db
+      .select()
+      .from(assignment)
+      .where(eq(assignment.slotId, gt1Slot));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("returns 404 and deletes nothing for a participant id from another event", async () => {
+    const setupA = await setupForBulkLeave();
+    const setupB = await setupForBulkLeave();
+
+    const response = await setupA.client.post(
+      `/e/${setupA.slug}/participants/${setupB.participantId}/leave-all`,
+    );
+    expect(response.status).toBe(404);
+
+    const db = createDb(env.DB);
+    const bGt1Slot = setupB.songASlots[0];
+    if (!bGt1Slot) throw new Error("expected slot");
+    const rows = await db
+      .select()
+      .from(assignment)
+      .where(eq(assignment.slotId, bGt1Slot));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("lets the organizer bulk-leave even once the event is closed", async () => {
+    const setup = await setupForBulkLeave();
+    await closeEvent(setup.slug);
+
+    const response = await setup.client.post(
+      `/e/${setup.slug}/participants/${setup.participantId}/leave-all`,
+    );
+    expect(response.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const gt1Slot = setup.songASlots[0];
+    if (!gt1Slot) throw new Error("expected slot");
+    const rows = await db
+      .select()
+      .from(assignment)
+      .where(eq(assignment.slotId, gt1Slot));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("does nothing (still 303) for a participant with zero entries", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, { displayName: "枠なし花子" });
+    const participantId = await findParticipantIdInEvent(created.slug, "枠なし花子");
+
+    const db = createDb(env.DB);
+    const before = await db.select().from(assignment);
+    const response = await created.client.post(
+      `/e/${created.slug}/participants/${participantId}/leave-all`,
+    );
+    expect(response.status).toBe(303);
+    const after = await db.select().from(assignment);
+    expect(after).toHaveLength(before.length);
   });
 });

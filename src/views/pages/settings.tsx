@@ -16,9 +16,9 @@ export interface SettingsPageProps {
 }
 
 /**
- * 設定画面(`/e/:slug/settings`)。復帰キーの再表示は
+ * 設定画面(`/e/:slug/settings`)。引き継ぎコードの再表示は
  * `src/client/ui.ts` の `initSettingsPage()` が localStorage から読んで
- * `#recovery-key-display` に差し込む(サーバーは平文の復帰キーを持たない)。
+ * `#recovery-key-display` に差し込む(サーバーは平文の引き継ぎコードを持たない)。
  */
 export const SettingsPage = ({
   slug,
@@ -40,12 +40,17 @@ export const SettingsPage = ({
 
       <section class="card">
         <h2>引き継ぎコード</h2>
-        <p id="recovery-key-display" class="recovery-key">
-          この端末で確認中です…
-        </p>
+        <div class="copy-row">
+          <p id="recovery-key-display" class="recovery-key">
+            この端末で確認中です…
+          </p>
+          <button type="button" data-copy-target="recovery-key-display">
+            コピーする
+          </button>
+        </div>
         <p>
           この端末に保存されていない場合は、
-          <a href={`/e/${slug}/recover`}>復帰キーで引き継ぐ</a>
+          <a href={`/e/${slug}/recover`}>引き継ぎコードで引き継ぐ</a>
           を使ってください。
         </p>
       </section>
@@ -93,7 +98,7 @@ export const SettingsPage = ({
             <h2>この端末の紐付けを解除</h2>
             <p>
               この端末に保存されている登録情報を解除します。合言葉から入り直すか、
-              復帰キーで再度紐付けるまで、参加者としての操作はできなくなります。
+              引き継ぎコードで再度紐付けるまで、参加者としての操作はできなくなります。
             </p>
             <form
               method="post"

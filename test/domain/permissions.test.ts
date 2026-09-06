@@ -11,6 +11,7 @@ import {
   canEditSong,
   canJoinAs,
   canLeave,
+  canLeaveAll,
 } from "../../src/domain/permissions";
 
 // 仕様 4章(112〜124行目)の権限表をテーブル駆動で確認する。
@@ -194,6 +195,26 @@ describe("仕様 4章の権限表", () => {
     if (!result.ok) {
       expect(result.message.length).toBeGreaterThan(0);
     }
+  });
+
+  it.each([
+    {
+      label: "参加者の全エントリー一括辞退: 主催者",
+      actor: { participantId: "p1", isOrganizer: true },
+      expected: true,
+    },
+    {
+      label: "参加者の全エントリー一括辞退: 参加者は×",
+      actor: { participantId: "p1", isOrganizer: false },
+      expected: false,
+    },
+    {
+      label: "参加者の全エントリー一括辞退: 未登録の主催者フラグのみでも○",
+      actor: { participantId: null, isOrganizer: true },
+      expected: true,
+    },
+  ])("$label -> $expected", ({ actor, expected }) => {
+    expect(canLeaveAll(actor).ok).toBe(expected);
   });
 
   it.each([

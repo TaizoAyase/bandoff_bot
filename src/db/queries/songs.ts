@@ -482,6 +482,8 @@ export interface MyAssignmentItem {
   takeOrdinal: number | null;
   /** `Gt1`/`Gt2` のように自動採番済みの枠ラベル。 */
   slotLabel: string;
+  /** このエントリーが入っている Slot の id。 */
+  slotId: string;
 }
 
 /**
@@ -505,6 +507,7 @@ export function deriveMyAssignments(
             songTitle: s.title,
             takeOrdinal: showOrdinal ? takeIndex + 1 : null,
             slotLabel: labels[slotIndex] ?? slotNode.instrument,
+            slotId: slotNode.id,
           });
         }
       });

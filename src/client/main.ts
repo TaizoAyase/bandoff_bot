@@ -1,20 +1,22 @@
 /**
  * クライアント側エントリポイント。`document.body.dataset.page` の値で
  * ページごとの初期化処理に分岐する。ページ種別を問わない配線
- * (確認ダイアログ・貼付文面のコピー)は分岐の外で無条件に呼ぶ。
+ * (確認ダイアログ・コピーボタン・合言葉の表示切替)は分岐の外で無条件に呼ぶ。
  */
 
 import { startPolling } from "./polling";
 import { initWelcomePage, tryRebind } from "./session";
 import {
   initConfirmDialogs,
-  initCopyPasteText,
+  initCopyButtons,
   initSettingsPage,
   initSongForm,
+  initVisibilityToggles,
 } from "./ui";
 
 initConfirmDialogs();
-initCopyPasteText();
+initCopyButtons();
+initVisibilityToggles();
 
 const page = document.body.dataset.page;
 

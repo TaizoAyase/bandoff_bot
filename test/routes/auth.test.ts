@@ -16,6 +16,7 @@ describe("GET /e/:slug/join", () => {
     expect(response.status).toBe(200);
     expect(html).not.toContain("秘密のオフ会タイトル");
     expect(html).not.toContain(created.joinCode);
+    expect(html).toContain('data-toggle-visibility="joinCode"');
   });
 
   it("redirects an already-viewer to the song list", async () => {

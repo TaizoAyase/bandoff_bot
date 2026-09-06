@@ -42,7 +42,7 @@ export function newToken(): string {
 }
 
 /**
- * 復帰キーを生成する。誤読しにくい32文字セット(Base32 から I/O/0/1 を除去)で
+ * 引き継ぎコードを生成する。誤読しにくい32文字セット(Base32 から I/O/0/1 を除去)で
  * `XXXX-XXXX-XXXX` 形式(60bit)。
  */
 export function newRecoveryKey(): string {
@@ -57,7 +57,7 @@ export function newRecoveryKey(): string {
 }
 
 /**
- * 復帰キー入力を照合用に正規化する。大文字化し、ハイフンと空白を除去する。
+ * 引き継ぎコード入力を照合用に正規化する。大文字化し、ハイフンと空白を除去する。
  */
 export function normalizeRecoveryKey(input: string): string {
   return input.toUpperCase().replace(/[\s-]/g, "");
