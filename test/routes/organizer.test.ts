@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../../src/db/client";
 import { event as eventTable } from "../../src/db/schema";
+import { parseJstDateTimeLocal } from "../../src/domain/time";
 import {
   closeEvent,
   createEvent,
@@ -12,6 +13,7 @@ import {
   joinAsViewer,
   loginAsOrganizer,
   registerParticipant,
+  setEventStartsAt,
 } from "../helpers";
 
 describe("GET/POST /e/:slug/organizer/login", () => {
@@ -89,7 +91,9 @@ describe("POST /e/:slug/organizer/event", () => {
     const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
       title: "変更後タイトル",
       region: "大阪",
-      startsAt: "2026-10-01T20:00",
+      startsDate: "2026-10-01",
+      startsTime: "20:00",
+      durationMinutes: "120",
       place: "新しい場所",
       notes: "更新した備考",
       status: "closed",
@@ -105,6 +109,49 @@ describe("POST /e/:slug/organizer/event", () => {
     expect(rows[0]?.region).toBe("大阪");
     expect(rows[0]?.place).toBe("新しい場所");
     expect(rows[0]?.status).toBe("closed");
+    expect(rows[0]?.durationMinutes).toBe(120);
+  });
+
+  it("marks the saved duration as selected when the form is redisplayed", async () => {
+    const created = await createEvent({ durationMinutes: "150" });
+    const response = await created.client.get(`/e/${created.slug}/organizer`);
+    const html = await response.text();
+
+    // 保存済みの 150 分だけが selected になり、未設定と他の候補は外れる。
+    expect(html).toContain('<option value="150" selected="">');
+    expect(html).not.toContain('<option value="" selected="">');
+    expect(html).not.toContain('<option value="180" selected="">');
+  });
+
+  it("marks 未設定 as selected when the event has no duration", async () => {
+    const created = await createEvent();
+    const response = await created.client.get(`/e/${created.slug}/organizer`);
+    const html = await response.text();
+
+    expect(html).toContain('<option value="" selected="">');
+    expect(html).not.toContain('<option value="180" selected="">');
+  });
+
+  it("rejects a duration value outside the allow list (tampered select value)", async () => {
+    const created = await createEvent({ title: "改ざん対象" });
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "改ざん対象",
+      region: "東京",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
+      durationMinutes: "999",
+      place: "場所",
+      notes: "",
+      status: "upcoming",
+    });
+    expect(response.status).toBe(400);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(eventTable)
+      .where(eq(eventTable.slug, created.slug));
+    expect(rows[0]?.durationMinutes).toBeNull();
   });
 
   it("is forbidden without the organizer flag", async () => {
@@ -113,12 +160,66 @@ describe("POST /e/:slug/organizer/event", () => {
     const response = await client.post(`/e/${created.slug}/organizer/event`, {
       title: "改ざん",
       region: "東京",
-      startsAt: "2026-09-05T19:00",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
       place: "場所",
       notes: "",
       status: "upcoming",
     });
     expect(response.status).toBe(403);
+  });
+});
+
+describe("旧データ保護: 15分刻みでない starts_at の編集フォーム", () => {
+  it("shows the actual value as an extra option instead of defaulting to 00:00", async () => {
+    const created = await createEvent();
+    // datetime-local 時代に作られた15分刻みでない値(例: 19:07)を
+    // 直接 DB に書き込んで再現する。
+    const legacyStartsAt = parseJstDateTimeLocal("2026-09-05T19:07");
+    await setEventStartsAt(created.slug, legacyStartsAt);
+
+    const response = await created.client.get(`/e/${created.slug}/organizer`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    expect(html).toContain(
+      '<option value="19:07" selected="">19:07(15分刻みではありません)</option>',
+    );
+    expect(html).not.toContain('<option value="00:00" selected="">');
+  });
+
+  it("rejects saving without re-selecting the time (would otherwise silently become 00:00)", async () => {
+    const created = await createEvent({ title: "旧データ編集対象" });
+    const legacyStartsAt = parseJstDateTimeLocal("2026-09-05T19:07");
+    await setEventStartsAt(created.slug, legacyStartsAt);
+
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "旧データ編集対象",
+      region: "東京",
+      startsDate: "2026-09-05",
+      startsTime: "19:07",
+      place: "スタジオA",
+      notes: "",
+      status: "upcoming",
+    });
+    expect(response.status).toBe(400);
+    const html = await response.text();
+    expect(html).toContain("開始時刻を15分刻みで選び直してください");
+
+    // エラーで再描画したときも旧値の option が残ること。ここが抜けると
+    // 「1度エラーを出すと 00:00 に化ける」経路が復活し、主催者が2度目の
+    // 送信で開始時刻を無警告に失う。
+    expect(html).toContain(
+      '<option value="19:07" selected="">19:07(15分刻みではありません)</option>',
+    );
+    expect(html).not.toContain('<option value="00:00" selected="">');
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(eventTable)
+      .where(eq(eventTable.slug, created.slug));
+    expect(rows[0]?.startsAt).toBe(legacyStartsAt);
   });
 });
 
@@ -151,7 +252,8 @@ describe("organizer フラグのみで participant がない cookie(p=null, o=tr
     const editResponse = await client.post(`/e/${created.slug}/organizer/event`, {
       title: "組織のみで編集",
       region: "東京",
-      startsAt: "2026-09-05T19:00",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
       place: "スタジオA",
       notes: "",
       status: "upcoming",

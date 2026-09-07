@@ -8,7 +8,7 @@ import { normalizeAccessKey } from "../domain/ids";
 import { buildPasteText } from "../domain/paste-text";
 import { canEditEvent } from "../domain/permissions";
 import { isRateLimited, RATE_LIMIT_WINDOW_SECONDS } from "../domain/rate-limit";
-import { toJstDateTimeLocal } from "../domain/time";
+import { toJstDateString, toJstTimeString } from "../domain/time";
 import { validateEventEditForm } from "../domain/validation";
 import type { AppEnv } from "../env";
 import { requireOrganizer, requireViewer } from "../middleware/guards";
@@ -111,7 +111,15 @@ organizerApp.get("/organizer", requireOrganizer, async (c) => {
     return notFoundResponse(c);
   }
   const origin = new URL(c.req.url).origin;
-  const pasteText = buildPasteText(origin, event.slug, event.title, event.joinCode);
+  const pasteText = buildPasteText(
+    origin,
+    event.slug,
+    event.title,
+    event.startsAt,
+    event.durationMinutes,
+    event.place,
+    event.joinCode,
+  );
   return renderPage(
     c,
     OrganizerPage({
@@ -119,7 +127,10 @@ organizerApp.get("/organizer", requireOrganizer, async (c) => {
       values: {
         title: event.title,
         region: event.region,
-        startsAt: toJstDateTimeLocal(event.startsAt),
+        startsDate: toJstDateString(event.startsAt),
+        startsTime: toJstTimeString(event.startsAt),
+        durationMinutes:
+          event.durationMinutes === null ? "" : String(event.durationMinutes),
         place: event.place,
         notes: event.notes ?? "",
         status: event.status,
@@ -145,7 +156,9 @@ organizerApp.post("/organizer/event", requireOrganizer, async (c) => {
   const input = {
     title: formString(body.title),
     region: formString(body.region),
-    startsAt: formString(body.startsAt),
+    startsDate: formString(body.startsDate),
+    startsTime: formString(body.startsTime),
+    durationMinutes: formString(body.durationMinutes),
     place: formString(body.place),
     notes: formString(body.notes),
     status: formString(body.status),
@@ -154,7 +167,15 @@ organizerApp.post("/organizer/event", requireOrganizer, async (c) => {
   const result = validateEventEditForm(input);
   if (!result.ok) {
     const origin = new URL(c.req.url).origin;
-    const pasteText = buildPasteText(origin, event.slug, event.title, event.joinCode);
+    const pasteText = buildPasteText(
+      origin,
+      event.slug,
+      event.title,
+      event.startsAt,
+      event.durationMinutes,
+      event.place,
+      event.joinCode,
+    );
     return renderPage(
       c,
       OrganizerPage({
@@ -195,6 +216,7 @@ organizerApp.get("/export.json", requireOrganizer, async (c) => {
       title: event.title,
       region: event.region,
       startsAt: event.startsAt,
+      durationMinutes: event.durationMinutes,
       place: event.place,
       notes: event.notes,
       status: event.status,

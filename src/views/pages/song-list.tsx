@@ -1,5 +1,6 @@
 import type { ParticipantSummary } from "../../db/queries/participants";
 import type { SongNode } from "../../db/queries/songs";
+import { EventInfo } from "../components/event-info";
 import { SongListItems } from "../components/song-list-items";
 import { Layout } from "../layout";
 
@@ -22,6 +23,10 @@ export function parseSongListNotice(
 
 export interface SongListPageProps {
   slug: string;
+  title: string;
+  startsAt: number;
+  durationMinutes: number | null;
+  place: string;
   songs: SongNode[];
   currentParticipantId: string | null;
   isOrganizer: boolean;
@@ -38,9 +43,15 @@ export interface SongListPageProps {
  * 曲一覧(メイン画面)。`#song-list` の中身は
  * `src/views/components/song-list-items.tsx` を共有し、ポーリング用の
  * HTML 断片(`GET /e/:slug/fragments/songs`)と同じ描画にする。
+ * イベント情報ブロック(`EventInfo`)は `#song-list` の外に置く
+ * (断片には含めない)。
  */
 export const SongListPage = ({
   slug,
+  title,
+  startsAt,
+  durationMinutes,
+  place,
   songs,
   currentParticipantId,
   isOrganizer,
@@ -49,9 +60,14 @@ export const SongListPage = ({
   past24h,
   status,
 }: SongListPageProps) => (
-  <Layout title="曲一覧 - bandoff" page="song-list">
+  <Layout title={`${title} - bandoff`} page="song-list">
     <main class="page" data-slug={slug} data-participant={currentParticipantId ?? "0"}>
-      <h1>曲一覧</h1>
+      <EventInfo
+        title={title}
+        startsAt={startsAt}
+        durationMinutes={durationMinutes}
+        place={place}
+      />
       <nav class="song-list-nav">
         <a href={`/e/${slug}/songs/new`}>曲を追加</a>
         <a href={`/e/${slug}/me`}>自分のエントリー</a>

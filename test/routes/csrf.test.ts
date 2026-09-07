@@ -11,7 +11,8 @@ const SAME_ORIGIN = "http://localhost";
 const NEW_EVENT_BODY = new URLSearchParams({
   title: "CSRFテストオフ会",
   region: "東京",
-  startsAt: "2026-09-20T19:00",
+  startsDate: "2026-09-20",
+  startsTime: "19:00",
   place: "スタジオA",
   notes: "",
   joinCode: "himitsu",

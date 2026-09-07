@@ -1,0 +1,1 @@
+ALTER TABLE `event` ADD `duration_minutes` integer;

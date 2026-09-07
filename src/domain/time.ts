@@ -41,15 +41,21 @@ export function formatJst(epochSeconds: number): string {
   return `${year}/${month}/${day}(${weekday}) ${hour}:${minute}`;
 }
 
-/** UTC エポック秒を `<input type="datetime-local">` 用の値(JST)に変換する。 */
-export function toJstDateTimeLocal(epochSeconds: number): string {
+/** UTC エポック秒を `<input type="date">` 用の値(JST、`YYYY-MM-DD`)に変換する。 */
+export function toJstDateString(epochSeconds: number): string {
   const d = toJstWallClockDate(epochSeconds);
   const year = d.getUTCFullYear();
   const month = pad2(d.getUTCMonth() + 1);
   const day = pad2(d.getUTCDate());
+  return `${year}-${month}-${day}`;
+}
+
+/** UTC エポック秒を開始時刻 `<select>` 用の値(JST、`HH:MM`)に変換する。 */
+export function toJstTimeString(epochSeconds: number): string {
+  const d = toJstWallClockDate(epochSeconds);
   const hour = pad2(d.getUTCHours());
   const minute = pad2(d.getUTCMinutes());
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+  return `${hour}:${minute}`;
 }
 
 /**
@@ -58,6 +64,43 @@ export function toJstDateTimeLocal(epochSeconds: number): string {
  */
 export function isPast24h(startsAt: number, now: number): boolean {
   return now - startsAt > ONE_DAY_SECONDS;
+}
+
+/** 長さ(分)を `"3時間"` `"1時間30分"` `"30分"` のように表示する。 */
+export function formatDurationMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainderMinutes = minutes % 60;
+  if (hours === 0) {
+    return `${remainderMinutes}分`;
+  }
+  if (remainderMinutes === 0) {
+    return `${hours}時間`;
+  }
+  return `${hours}時間${remainderMinutes}分`;
+}
+
+/**
+ * 開始日時と長さ(分)から期間の表示文字列を組み立てる。
+ * `durationMinutes` が `null`(未設定)なら `formatJst` と同じ結果を返す。
+ * 終了時刻が開始日をまたぐ場合は `翌 02:00` のように「翌」を付ける
+ * (スタジオのオールナイトなど)。
+ */
+export function formatEventPeriod(
+  startsAt: number,
+  durationMinutes: number | null,
+): string {
+  if (durationMinutes === null) {
+    return formatJst(startsAt);
+  }
+  const start = toJstWallClockDate(startsAt);
+  const end = toJstWallClockDate(startsAt + durationMinutes * 60);
+  const endTime = `${pad2(end.getUTCHours())}:${pad2(end.getUTCMinutes())}`;
+  const crossesDay =
+    end.getUTCFullYear() !== start.getUTCFullYear() ||
+    end.getUTCMonth() !== start.getUTCMonth() ||
+    end.getUTCDate() !== start.getUTCDate();
+  const endLabel = crossesDay ? `翌 ${endTime}` : endTime;
+  return `${formatJst(startsAt)}〜${endLabel} (${formatDurationMinutes(durationMinutes)})`;
 }
 
 /**

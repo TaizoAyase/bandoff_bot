@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { STARTS_TIME_OPTIONS } from "../../src/domain/starts-time";
 import {
   LIMITS,
   normalizeJoinCode,
   validateDisplayName,
+  validateDurationMinutes,
   validateEventEditForm,
   validateJoinCode,
   validateNewEventForm,
@@ -10,6 +12,8 @@ import {
   validateRefUrl,
   validateSlotForm,
   validateSongForm,
+  validateStartsDate,
+  validateStartsTime,
 } from "../../src/domain/validation";
 
 describe("validateDisplayName", () => {
@@ -82,11 +86,94 @@ describe("normalizeJoinCode / validateJoinCode", () => {
   });
 });
 
+describe("validateStartsDate", () => {
+  it("accepts a well-formed, real date", () => {
+    expect(validateStartsDate("2026-09-05")).toEqual({
+      ok: true,
+      value: "2026-09-05",
+    });
+  });
+
+  it("rejects an empty value", () => {
+    const result = validateStartsDate("");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("開催日を入力してください");
+    }
+  });
+
+  it("rejects a malformed value", () => {
+    expect(validateStartsDate("abc").ok).toBe(false);
+  });
+
+  it("rejects a date that rolls over via Date.UTC (Feb 30 -> Mar 2)", () => {
+    // Date.UTC(2026, 1, 30) は 2026-03-02 にロールオーバーするため、
+    // 見た目だけ形式が合っていても実在しない日付として拒否する必要がある。
+    expect(validateStartsDate("2026-02-30").ok).toBe(false);
+  });
+
+  it("rejects a month out of range (13)", () => {
+    expect(validateStartsDate("2026-13-01").ok).toBe(false);
+  });
+});
+
+describe("validateStartsTime", () => {
+  it("accepts every value in the 15 minute allow list", () => {
+    for (const time of STARTS_TIME_OPTIONS) {
+      expect(validateStartsTime(time)).toEqual({ ok: true, value: time });
+    }
+  });
+
+  it("has exactly 96 options (00:00-23:45 in 15 minute steps)", () => {
+    expect(STARTS_TIME_OPTIONS).toHaveLength(96);
+  });
+
+  it("rejects a value not on the 15 minute allow list (tampered select value)", () => {
+    const result = validateStartsTime("19:07");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("開始時刻を15分刻みで選び直してください");
+    }
+  });
+
+  it("rejects a non-time value", () => {
+    expect(validateStartsTime("abc").ok).toBe(false);
+  });
+
+  it("rejects an empty value", () => {
+    const result = validateStartsTime("");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("開始時刻を選んでください");
+    }
+  });
+});
+
+describe("validateDurationMinutes", () => {
+  it("treats an empty string as unset (null)", () => {
+    expect(validateDurationMinutes("")).toEqual({ ok: true, value: null });
+  });
+
+  it("accepts a value from the allow list", () => {
+    expect(validateDurationMinutes("180")).toEqual({ ok: true, value: 180 });
+  });
+
+  it("rejects a value outside the allow list (tampered select value)", () => {
+    expect(validateDurationMinutes("100").ok).toBe(false);
+  });
+
+  it("rejects a non-numeric value", () => {
+    expect(validateDurationMinutes("abc").ok).toBe(false);
+  });
+});
+
 describe("validateNewEventForm", () => {
   const validInput = {
     title: "テストオフ会",
     region: "東京",
-    startsAt: "2026-09-05T19:00",
+    startsDate: "2026-09-05",
+    startsTime: "19:00",
+    durationMinutes: "180",
     place: "スタジオA",
     notes: "",
     joinCode: "himitsu",
@@ -102,7 +189,9 @@ describe("validateNewEventForm", () => {
     const result = validateNewEventForm({
       title: "",
       region: "",
-      startsAt: "",
+      startsDate: "",
+      startsTime: "",
+      durationMinutes: "",
       place: "",
       notes: "",
       joinCode: "",
@@ -114,7 +203,8 @@ describe("validateNewEventForm", () => {
         [
           "title",
           "region",
-          "startsAt",
+          "startsDate",
+          "startsTime",
           "place",
           "joinCode",
           "organizerDisplayName",
@@ -180,7 +270,9 @@ describe("validateEventEditForm", () => {
   const validInput = {
     title: "テストオフ会",
     region: "東京",
-    startsAt: "2026-09-05T19:00",
+    startsDate: "2026-09-05",
+    startsTime: "19:00",
+    durationMinutes: "180",
     place: "スタジオA",
     notes: "",
     status: "upcoming",

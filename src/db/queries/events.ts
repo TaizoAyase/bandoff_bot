@@ -15,6 +15,7 @@ export interface CreateEventInput {
   title: string;
   region: string;
   startsAt: number;
+  durationMinutes: number | null;
   place: string;
   notes: string;
   joinCode: string;
@@ -44,6 +45,7 @@ export async function createEvent(db: Db, input: CreateEventInput): Promise<void
       title: input.title,
       region: input.region,
       startsAt: input.startsAt,
+      durationMinutes: input.durationMinutes,
       place: input.place,
       notes: input.notes === "" ? null : input.notes,
       status: "upcoming",
@@ -74,13 +76,17 @@ export interface UpdateEventInput {
   title: string;
   region: string;
   startsAt: number;
+  durationMinutes: number | null;
   place: string;
   notes: string;
   status: "upcoming" | "closed";
   updatedAt: number;
 }
 
-/** 主催者画面からのイベント情報編集(タイトル・地域・日時・場所・備考・status)。 */
+/**
+ * 主催者画面からのイベント情報編集
+ * (タイトル・地域・日時・長さ・場所・備考・status)。
+ */
 export async function updateEvent(
   db: Db,
   eventId: string,
@@ -92,6 +98,7 @@ export async function updateEvent(
       title: input.title,
       region: input.region,
       startsAt: input.startsAt,
+      durationMinutes: input.durationMinutes,
       place: input.place,
       notes: input.notes === "" ? null : input.notes,
       status: input.status,

@@ -74,6 +74,7 @@ describe("signed session cookie round trip", () => {
     title: "テストイベント",
     region: "東京",
     startsAt: 0,
+    durationMinutes: null,
     place: "テスト会場",
     notes: null,
     status: "upcoming",

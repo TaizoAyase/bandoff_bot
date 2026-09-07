@@ -62,4 +62,13 @@ describe("GET /e/:slug/export.json", () => {
     expect(song).toBeDefined();
     expect(song?.takes.length).toBeGreaterThan(0);
   });
+
+  it("includes durationMinutes in the event data", async () => {
+    const created = await createEvent({ durationMinutes: "180" });
+    const response = await created.client.get(`/e/${created.slug}/export.json`);
+    const data = (await response.json()) as {
+      event: { durationMinutes: number | null };
+    };
+    expect(data.event.durationMinutes).toBe(180);
+  });
 });

@@ -153,6 +153,12 @@ Worker 名と D1 名だけ別にしてあるのは、公開 URL のホスト名�
   起きた)。
 - **OGP メタタグを出さない**(`src/views/layout.tsx`)。Discord に URL を貼ると
   プロキシがページを取得して埋め込みを生成し、イベント名や日時が露出するため。
+- **イベント名・日時・場所は合言葉を通した後にしか出さない**。曲一覧の
+  `EventInfo`(`src/views/components/event-info.tsx`)と `<title>` に
+  イベント名が載るので、これを守っているのは `requireViewer` の 303
+  リダイレクト1点のみ。ガードを緩めると URL を知っただけの相手に中身が
+  渡る。`test/routes/event-info-leak.test.ts` が本文にイベント名が
+  含まれないことを直接検証している。
 - **1枠1人は条件付き INSERT と `UNIQUE(slot_id)` の二重で守る**
   (`src/db/queries/assignments.ts`)。片方だけにしない。
 - **すべての書き込みルートで対象リソースの `event_id` を照合する**。他イベント
@@ -162,6 +168,14 @@ Worker 名と D1 名だけ別にしてあるのは、公開 URL のホスト名�
 - **CSP により inline の `style` / `onclick` / `<script>` は使えない**。
   データは `data-*` 属性で渡し、イベントは document への委譲リスナで処理する
   (`src/client/ui.ts` の流儀)。
+- **`<select>` の現在値が選択肢に無いときは、その値を選択肢に足す**
+  (`src/domain/starts-time.ts` の `buildStartsTimeOptions`)。開始時刻は
+  15分刻み96択だが、`datetime-local` を使っていた頃のイベントは 19:07 の
+  ような値を持ちうる。一致する `<option>` が無いとブラウザは先頭の
+  `00:00` を選択状態にするため、主催者が長さだけ直して更新すると開始
+  時刻が**無警告で書き換わる**。旧値を選択肢に足しておけば、選び直す
+  まで検証エラーになるだけで壊れない。同じ罠は今後 `<select>` を足す
+  たびに再発しうる。
 - **テストの D1 の分離単位はファイル単位**(`@cloudflare/vitest-pool-workers`
   の仕様、`isolatedStorage` は廃止済み)。詳細は上の `pnpm check` の節を参照。
 
@@ -222,6 +236,12 @@ pnpm exec wrangler secret put SESSION_SECRET
 
 手順4で `database_id` を書き写していないと(プレースホルダ
 `PLACEHOLDER_REPLACE_AFTER_D1_CREATE` のままだと)、ここで失敗して止まる。
+
+**2回目以降のデプロイでも、マイグレーションは必ずデプロイより先に当てる。**
+逆にすると、新しいコードが本番にまだ存在しない列を読もうとして落ちる。
+列の追加(`ALTER TABLE ... ADD COLUMN`、NULL 許容)であれば、先に当てても
+旧コードはその列を知らないだけなので動き続ける。つまりこの順序なら
+ダウンタイムは発生しない。
 
 ```sh
 pnpm db:migrate:remote

@@ -3,14 +3,20 @@ import { closeEvent, createEvent } from "../helpers";
 
 describe("24時間経過バナー", () => {
   it("shows the banner once the event is more than 24h in the past", async () => {
-    const created = await createEvent({ startsAt: "2020-01-01T00:00" });
+    const created = await createEvent({
+      startsDate: "2020-01-01",
+      startsTime: "00:00",
+    });
     const response = await created.client.get(`/e/${created.slug}/`);
     const html = await response.text();
     expect(html).toContain("24時間以上経過しています");
   });
 
   it("does not show the banner for a future event", async () => {
-    const created = await createEvent({ startsAt: "2099-01-01T00:00" });
+    const created = await createEvent({
+      startsDate: "2099-01-01",
+      startsTime: "00:00",
+    });
     const response = await created.client.get(`/e/${created.slug}/`);
     const html = await response.text();
     expect(html).not.toContain("24時間以上経過しています");

@@ -59,8 +59,8 @@ Botの価値は別のところにある。
 
 ```
 Workspace(id, discord_guild_id, name)
- └ Event(id, workspace_id, slug, title, region, datetime, place,
-         notes, status, join_code, organizer_key_hash,
+ └ Event(id, workspace_id, slug, title, region, starts_at, duration_minutes,
+         place, notes, status, join_code, organizer_key_hash,
          organizer_participant_id, created_at)
      ├ Participant(id, event_id, display_name, instruments,
      │             token_hash, recovery_key_hash, discord_user_id?,
@@ -145,6 +145,14 @@ Workspace(id, discord_guild_id, name)
 
 ### 曲一覧(メイン画面)
 
+先頭にイベント情報を出す。イベント名・開催日時と長さ・場所の3点。
+当日スタジオで「何時から何時まで、どこで」を確認する用途が主なので、
+地域は場所と重複しがちなため出さない。
+
+この情報は合言葉を通した後にしか見えない(`requireViewer`)。URLだけが
+漏れた場合に中身を渡さないための境界なので、認証前のレスポンスに
+イベント名が含まれないことはテストで固定する。
+
 曲カードを縦に並べる。1曲1カードで、中にSlotが横並び。埋まっている枠は参加者名、空き枠は「+ 参加」ボタン。
 
 曲数が増えても破綻せず、スマホでも成立する。スタジオで当日スマホから見ることを考えると実質これ一択。人×曲のマトリクス表示はPCでしか成立しないので、必要になったら補助的に追加する。
@@ -176,7 +184,7 @@ Take追加時は **Take1の枠構成をコピーする**(中の人は空)のを�
 ### 6.1 主催者:イベント作成
 
 1. `/new` を開く(誰でもアクセス可。他人のイベントは覗けないため)
-2. イベント情報を入力(タイトル、地域、日時、場所、備考)
+2. イベント情報を入力(タイトル、地域、日時、長さ、場所、備考)。日時は日付のカレンダー入力と15分刻み96択の時刻選択に分ける(`step` 付きの `datetime-local` は任意の時刻を打ててしまい、送信するまで弾かれないため)。長さは30分〜8時間の選択式(未設定も可)
 3. **同じフォームで自分の表示名と持ち込み楽器も入力**する。主催者は必ず参加者を兼ねるため、ここで Participant を同時に生成し `organizer_participant_id` に紐付ける
 4. 合言葉(参加者用)を設定。主催者キー(編集・代理操作用)は作成時にサーバーが発行する
 5. 作成 → slugが生成され `/e/{slug}/` へリダイレクト。主催者cookieが立ち、復帰キーが表示される

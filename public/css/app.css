@@ -118,6 +118,21 @@ textarea {
   border-radius: 4px;
 }
 
+/* イベント情報ブロック(曲一覧上部)。地域は場所と重複しがちなので出さない。 */
+.event-info {
+  margin-bottom: 16px;
+}
+
+.event-info h1 {
+  margin: 0 0 4px;
+}
+
+.event-info-schedule,
+.event-info-place {
+  margin: 2px 0;
+  color: #444;
+}
+
 /* 曲一覧 */
 .song-list-nav {
   display: flex;

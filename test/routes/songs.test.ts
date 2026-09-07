@@ -5,6 +5,7 @@ import { createDb } from "../../src/db/client";
 import { assignment, event as eventTable, slot, song, take } from "../../src/db/schema";
 import { LIMITS } from "../../src/domain/validation";
 import {
+  type CreateEventOptions,
   closeEvent,
   createEvent,
   createSong,
@@ -15,8 +16,8 @@ import {
   registerParticipant,
 } from "../helpers";
 
-async function createEventWithParticipant() {
-  const created = await createEvent();
+async function createEventWithParticipant(options: CreateEventOptions = {}) {
+  const created = await createEvent(options);
   const client = await joinAsViewer(created.slug, created.joinCode);
   await registerParticipant(client, created.slug, { displayName: "山田" });
   return { ...created, client };
@@ -117,6 +118,25 @@ describe("GET /e/:slug/fragments/songs", () => {
     expect(html).toContain("断片テスト曲");
     expect(html).not.toContain("<!doctype html>");
     expect(html).not.toContain("<html");
+  });
+
+  it("does not include the event info block (name/schedule/place)", async () => {
+    const setup = await createEventWithParticipant({
+      title: "断片には出ないはずのイベント名",
+      place: "断片には出ないはずの場所",
+    });
+
+    const response = await setup.client.get(`/e/${setup.slug}/fragments/songs`);
+    const html = await response.text();
+    expect(html).not.toContain("断片には出ないはずのイベント名");
+    expect(html).not.toContain("断片には出ないはずの場所");
+    expect(html).not.toContain('class="event-info"');
+
+    // 曲一覧本体(#song-list の外側)には出ていることの対照確認。
+    const fullPage = await setup.client.get(`/e/${setup.slug}/`);
+    const fullHtml = await fullPage.text();
+    expect(fullHtml).toContain("断片には出ないはずのイベント名");
+    expect(fullHtml).toContain("断片には出ないはずの場所");
   });
 
   it("returns 401 for a request without a valid viewer cookie", async () => {

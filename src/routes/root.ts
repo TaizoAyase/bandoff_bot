@@ -34,7 +34,9 @@ rootApp.post("/new", async (c) => {
   const input = {
     title: formString(body.title),
     region: formString(body.region),
-    startsAt: formString(body.startsAt),
+    startsDate: formString(body.startsDate),
+    startsTime: formString(body.startsTime),
+    durationMinutes: formString(body.durationMinutes),
     place: formString(body.place),
     notes: formString(body.notes),
     joinCode: formString(body.joinCode),
@@ -75,6 +77,7 @@ rootApp.post("/new", async (c) => {
     title: result.value.title,
     region: result.value.region,
     startsAt: result.value.startsAt,
+    durationMinutes: result.value.durationMinutes,
     place: result.value.place,
     notes: result.value.notes,
     joinCode: result.value.joinCode,
@@ -99,6 +102,9 @@ rootApp.post("/new", async (c) => {
     origin,
     slug,
     result.value.title,
+    result.value.startsAt,
+    result.value.durationMinutes,
+    result.value.place,
     result.value.joinCode,
   );
 

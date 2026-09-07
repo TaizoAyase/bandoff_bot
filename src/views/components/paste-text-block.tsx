@@ -12,7 +12,7 @@ export const PasteTextBlock = ({ pasteText }: PasteTextBlockProps) => (
   <section class="card">
     <h2>Discordに貼る文面</h2>
     <p>URLと合言葉をまとめたものです。そのまま貼り付けられます。</p>
-    <textarea id="paste-text" class="paste-text" readonly rows={4}>
+    <textarea id="paste-text" class="paste-text" readonly rows={5}>
       {pasteText}
     </textarea>
     <button type="button" data-copy-target="paste-text">

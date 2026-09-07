@@ -134,7 +134,12 @@ function extractDataAttr(html: string, attr: string): string | null {
 export interface CreateEventOptions {
   title?: string;
   region?: string;
-  startsAt?: string;
+  /** `<input type="date" name="startsDate">` の値。省略時は "2026-09-05"。 */
+  startsDate?: string;
+  /** `<select name="startsTime">` の値。省略時は "19:00"。 */
+  startsTime?: string;
+  /** `<select name="durationMinutes">` の値。省略時は送らない(未設定扱い)。 */
+  durationMinutes?: string;
   place?: string;
   notes?: string;
   joinCode?: string;
@@ -170,7 +175,9 @@ export async function createEvent(
   const values = {
     title: options.title ?? "テストオフ会",
     region: options.region ?? "東京",
-    startsAt: options.startsAt ?? "2026-09-05T19:00",
+    startsDate: options.startsDate ?? "2026-09-05",
+    startsTime: options.startsTime ?? "19:00",
+    durationMinutes: options.durationMinutes ?? "",
     place: options.place ?? "スタジオA",
     notes: options.notes ?? "",
     joinCode: options.joinCode ?? "himitsu",
@@ -357,6 +364,16 @@ export async function closeEvent(slug: string): Promise<void> {
     .update(eventTable)
     .set({ status: "closed" })
     .where(eq(eventTable.slug, slug));
+}
+
+/**
+ * イベントの `starts_at` を直接 DB に書き込む(DB を直接操作)。
+ * `datetime-local` 時代に作られた15分刻みでない値(旧データ)を
+ * 再現するために使う。
+ */
+export async function setEventStartsAt(slug: string, startsAt: number): Promise<void> {
+  const db = createDb(env.DB);
+  await db.update(eventTable).set({ startsAt }).where(eq(eventTable.slug, slug));
 }
 
 /** `/e/:slug/songs/:id/takes` に POST して Take を追加する。 */

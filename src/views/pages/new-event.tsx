@@ -1,3 +1,5 @@
+import { DEFAULT_DURATION_MINUTES, DURATION_OPTIONS } from "../../domain/duration";
+import { buildStartsTimeOptions, DEFAULT_STARTS_TIME } from "../../domain/starts-time";
 import { LIMITS, type NewEventFormInput } from "../../domain/validation";
 import { FieldError } from "../components/field-error";
 import { Layout } from "../layout";
@@ -12,7 +14,9 @@ export interface NewEventPageProps {
 export const emptyNewEventFormValues: NewEventFormInput = {
   title: "",
   region: "",
-  startsAt: "",
+  startsDate: "",
+  startsTime: DEFAULT_STARTS_TIME,
+  durationMinutes: String(DEFAULT_DURATION_MINUTES),
   place: "",
   notes: "",
   joinCode: "",
@@ -53,15 +57,48 @@ export const NewEventPage = ({ values, instruments, errors }: NewEventPageProps)
         </div>
 
         <div class="field">
-          <label for="startsAt">開催日時</label>
+          <label for="startsDate">開催日</label>
           <input
-            id="startsAt"
-            type="datetime-local"
-            name="startsAt"
-            value={values.startsAt}
+            id="startsDate"
+            type="date"
+            name="startsDate"
+            value={values.startsDate}
             required
           />
-          <FieldError message={errors.startsAt} />
+          <FieldError message={errors.startsDate} />
+        </div>
+
+        <div class="field">
+          <label for="startsTime">開始時刻</label>
+          <select id="startsTime" name="startsTime">
+            {buildStartsTimeOptions(values.startsTime).map((option) => (
+              <option
+                value={option.value}
+                selected={values.startsTime === option.value}
+              >
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <FieldError message={errors.startsTime} />
+        </div>
+
+        <div class="field">
+          <label for="durationMinutes">長さ</label>
+          <select id="durationMinutes" name="durationMinutes">
+            <option value="" selected={values.durationMinutes === ""}>
+              未設定
+            </option>
+            {DURATION_OPTIONS.map((option) => (
+              <option
+                value={String(option.minutes)}
+                selected={values.durationMinutes === String(option.minutes)}
+              >
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <FieldError message={errors.durationMinutes} />
         </div>
 
         <div class="field">

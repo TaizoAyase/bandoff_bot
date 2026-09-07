@@ -26,6 +26,10 @@ pagesApp.get("/", requireViewer, async (c) => {
     c,
     SongListPage({
       slug: event.slug,
+      title: event.title,
+      startsAt: event.startsAt,
+      durationMinutes: event.durationMinutes,
+      place: event.place,
       songs,
       currentParticipantId: viewer.participant?.id ?? null,
       isOrganizer: viewer.isOrganizer,

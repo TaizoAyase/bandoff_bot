@@ -3,6 +3,8 @@
  * 文言はすべて日本語。エラーはフィールド名をキーにした Record で返す。
  */
 
+import { DURATION_MINUTES_OPTIONS } from "./duration";
+import { STARTS_TIME_OPTIONS } from "./starts-time";
 import { parseJstDateTimeLocal } from "./time";
 
 export type ValidationResult<T> =
@@ -143,22 +145,75 @@ export function validateJoinCode(value: string): FieldResult<string> {
   return { ok: true, value: normalized };
 }
 
-/** 開催日時(`<input type="datetime-local">` の値、JST)を検証する。 */
-export function validateStartsAt(value: string): FieldResult<number> {
+const STARTS_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * 開催日(`<input type="date">` の値)を検証する。`YYYY-MM-DD` 形式であることに
+ * 加え、実在する日付であることを確認する。`Date.UTC` は月日がロールオーバー
+ * する(例: 2026-02-30 → 2026-03-02)ため、生成した `Date` の各フィールドを
+ * 読み戻して入力値と一致するかまで確認する。
+ */
+export function validateStartsDate(value: string): FieldResult<string> {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return { ok: false, error: "開催日を入力してください" };
+  }
+  const match = STARTS_DATE_PATTERN.exec(trimmed);
+  if (!match) {
+    return { ok: false, error: "開催日の形式が正しくありません" };
+  }
+  const [, yearStr, monthStr, dayStr] = match;
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const rolledOver =
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day;
+  if (rolledOver) {
+    return { ok: false, error: "開催日の形式が正しくありません" };
+  }
+  return { ok: true, value: trimmed };
+}
+
+/**
+ * 開始時刻(`<select>` の値)を検証する。`<select>` の値は改竄されうるため、
+ * 15分刻み96択の許可リストと厳密に照合する。この許可リストが唯一の防御であり、
+ * `datetime-local` 時代に作られた15分刻みでない値(旧データ)を主催者が
+ * 選び直さずに送信した場合も、ここで拒否する
+ * (旧データの扱いは `src/domain/starts-time.ts` を参照)。
+ */
+export function validateStartsTime(value: string): FieldResult<string> {
   if (value.trim() === "") {
-    return { ok: false, error: "開催日時を入力してください" };
+    return { ok: false, error: "開始時刻を選んでください" };
   }
-  try {
-    return { ok: true, value: parseJstDateTimeLocal(value) };
-  } catch {
-    return { ok: false, error: "開催日時の形式が正しくありません" };
+  if (!STARTS_TIME_OPTIONS.includes(value)) {
+    return { ok: false, error: "開始時刻を15分刻みで選び直してください" };
   }
+  return { ok: true, value };
+}
+
+/** 長さ(分、`<select>` の値)を検証する。空文字は未設定(null)を意味する。 */
+export function validateDurationMinutes(value: string): FieldResult<number | null> {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return { ok: true, value: null };
+  }
+  const parsed = Number(trimmed);
+  // select の値は改竄されうるため、許可リストと厳密に照合する。
+  if (!DURATION_MINUTES_OPTIONS.includes(parsed)) {
+    return { ok: false, error: "長さの値が不正です" };
+  }
+  return { ok: true, value: parsed };
 }
 
 export interface NewEventFormInput {
   title: string;
   region: string;
-  startsAt: string;
+  startsDate: string;
+  startsTime: string;
+  durationMinutes: string;
   place: string;
   notes: string;
   joinCode: string;
@@ -169,6 +224,7 @@ export interface NewEventFormValue {
   title: string;
   region: string;
   startsAt: number;
+  durationMinutes: number | null;
   place: string;
   notes: string;
   joinCode: string;
@@ -187,8 +243,14 @@ export function validateNewEventForm(
   const region = validateRegion(input.region);
   if (!region.ok) errors.region = region.error;
 
-  const startsAt = validateStartsAt(input.startsAt);
-  if (!startsAt.ok) errors.startsAt = startsAt.error;
+  const startsDate = validateStartsDate(input.startsDate);
+  if (!startsDate.ok) errors.startsDate = startsDate.error;
+
+  const startsTime = validateStartsTime(input.startsTime);
+  if (!startsTime.ok) errors.startsTime = startsTime.error;
+
+  const durationMinutes = validateDurationMinutes(input.durationMinutes);
+  if (!durationMinutes.ok) errors.durationMinutes = durationMinutes.error;
 
   const place = validatePlace(input.place);
   if (!place.ok) errors.place = place.error;
@@ -213,7 +275,9 @@ export function validateNewEventForm(
   if (
     !title.ok ||
     !region.ok ||
-    !startsAt.ok ||
+    !startsDate.ok ||
+    !startsTime.ok ||
+    !durationMinutes.ok ||
     !place.ok ||
     !notes.ok ||
     !joinCode.ok ||
@@ -227,7 +291,8 @@ export function validateNewEventForm(
     value: {
       title: title.value,
       region: region.value,
-      startsAt: startsAt.value,
+      startsAt: parseJstDateTimeLocal(`${startsDate.value}T${startsTime.value}`),
+      durationMinutes: durationMinutes.value,
       place: place.value,
       notes: notes.value,
       joinCode: joinCode.value,
@@ -248,7 +313,9 @@ function validateEventStatus(value: string): FieldResult<EventStatus> {
 export interface EventEditFormInput {
   title: string;
   region: string;
-  startsAt: string;
+  startsDate: string;
+  startsTime: string;
+  durationMinutes: string;
   place: string;
   notes: string;
   status: string;
@@ -258,6 +325,7 @@ export interface EventEditFormValue {
   title: string;
   region: string;
   startsAt: number;
+  durationMinutes: number | null;
   place: string;
   notes: string;
   status: EventStatus;
@@ -275,8 +343,14 @@ export function validateEventEditForm(
   const region = validateRegion(input.region);
   if (!region.ok) errors.region = region.error;
 
-  const startsAt = validateStartsAt(input.startsAt);
-  if (!startsAt.ok) errors.startsAt = startsAt.error;
+  const startsDate = validateStartsDate(input.startsDate);
+  if (!startsDate.ok) errors.startsDate = startsDate.error;
+
+  const startsTime = validateStartsTime(input.startsTime);
+  if (!startsTime.ok) errors.startsTime = startsTime.error;
+
+  const durationMinutes = validateDurationMinutes(input.durationMinutes);
+  if (!durationMinutes.ok) errors.durationMinutes = durationMinutes.error;
 
   const place = validatePlace(input.place);
   if (!place.ok) errors.place = place.error;
@@ -291,7 +365,16 @@ export function validateEventEditForm(
     return { ok: false, errors };
   }
 
-  if (!title.ok || !region.ok || !startsAt.ok || !place.ok || !notes.ok || !status.ok) {
+  if (
+    !title.ok ||
+    !region.ok ||
+    !startsDate.ok ||
+    !startsTime.ok ||
+    !durationMinutes.ok ||
+    !place.ok ||
+    !notes.ok ||
+    !status.ok
+  ) {
     return { ok: false, errors };
   }
 
@@ -300,7 +383,8 @@ export function validateEventEditForm(
     value: {
       title: title.value,
       region: region.value,
-      startsAt: startsAt.value,
+      startsAt: parseJstDateTimeLocal(`${startsDate.value}T${startsTime.value}`),
+      durationMinutes: durationMinutes.value,
       place: place.value,
       notes: notes.value,
       status: status.value,

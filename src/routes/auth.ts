@@ -167,7 +167,15 @@ authApp.post("/recover", requireViewer, async (c) => {
   await setSession(c, event.slug, { e: event.id, p: found.id, o: viewer.isOrganizer });
 
   const origin = new URL(c.req.url).origin;
-  const pasteText = buildPasteText(origin, event.slug, event.title, event.joinCode);
+  const pasteText = buildPasteText(
+    origin,
+    event.slug,
+    event.title,
+    event.startsAt,
+    event.durationMinutes,
+    event.place,
+    event.joinCode,
+  );
 
   return renderPage(
     c,

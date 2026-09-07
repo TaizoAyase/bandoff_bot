@@ -29,6 +29,10 @@ export const event = sqliteTable(
     title: text("title").notNull(),
     region: text("region").notNull(),
     startsAt: integer("starts_at").notNull(),
+    // 所要時間(分)。既存イベントには値がないため nullable。
+    // ALTER TABLE で非破壊に追加したため、終了時刻(ends_at)列は作らず
+    // 表示時に startsAt + durationMinutes から計算する。
+    durationMinutes: integer("duration_minutes"),
     place: text("place").notNull(),
     notes: text("notes"),
     status: text("status").notNull().default("upcoming"),

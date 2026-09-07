@@ -40,7 +40,8 @@ describe("POST /new", () => {
     const response = await client.post("/new", {
       title: "テストオフ会",
       region: "東京",
-      startsAt: "2026-09-05T19:00",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
       place: "スタジオA",
       notes: "",
       joinCode: "himitsu",
@@ -73,7 +74,8 @@ describe("POST /new", () => {
     const response = await client.post("/new", {
       title: "",
       region: "",
-      startsAt: "",
+      startsDate: "",
+      startsTime: "",
       place: "",
       notes: "",
       joinCode: "",
@@ -81,6 +83,90 @@ describe("POST /new", () => {
       organizerInstruments: "",
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("開催日時(startsDate/startsTime)", () => {
+  it("creates the event and shows the chosen date/time on the song list", async () => {
+    const created = await createEvent({
+      title: "日時指定オフ会",
+      startsDate: "2026-11-03",
+      startsTime: "18:30",
+    });
+    const songList = await created.client.get(`/e/${created.slug}/`);
+    expect(songList.status).toBe(200);
+    const html = await songList.text();
+    expect(html).toContain("2026/11/03");
+    expect(html).toContain("18:30");
+  });
+
+  it.each(["19:07", "abc", ""])(
+    "rejects a startsTime value outside the 15 minute allow list: %s",
+    async (startsTime) => {
+      const client = createTestClient();
+      const response = await client.post("/new", {
+        title: "不正時刻オフ会",
+        region: "東京",
+        startsDate: "2026-09-05",
+        startsTime,
+        place: "スタジオA",
+        notes: "",
+        joinCode: "himitsu",
+        organizerDisplayName: "主催者",
+        organizerInstruments: "Gt",
+      });
+      expect(response.status).toBe(400);
+    },
+  );
+
+  it.each(["2026-02-30", "2026-13-01", "abc", ""])(
+    "rejects an invalid startsDate value: %s",
+    async (startsDate) => {
+      const client = createTestClient();
+      const response = await client.post("/new", {
+        title: "不正日付オフ会",
+        region: "東京",
+        startsDate,
+        startsTime: "19:00",
+        place: "スタジオA",
+        notes: "",
+        joinCode: "himitsu",
+        organizerDisplayName: "主催者",
+        organizerInstruments: "Gt",
+      });
+      expect(response.status).toBe(400);
+
+      // 2026-02-30 は Date.UTC のロールオーバーで 3/2 になりうるため、
+      // 400 だけでなく実際にイベントが作成されていないことまで確認する。
+      const db = createDb(env.DB);
+      const rows = await db
+        .select()
+        .from(event)
+        .where(eq(event.title, "不正日付オフ会"));
+      expect(rows).toHaveLength(0);
+    },
+  );
+});
+
+describe("イベントの長さ(durationMinutes)", () => {
+  it("creates the event with a duration and shows it on the song list", async () => {
+    const created = await createEvent({
+      title: "長さ指定オフ会",
+      durationMinutes: "180",
+    });
+    const songList = await created.client.get(`/e/${created.slug}/`);
+    expect(songList.status).toBe(200);
+    const html = await songList.text();
+    expect(html).toContain("(3時間)");
+  });
+
+  it("creates the event without a duration (unset)", async () => {
+    const created = await createEvent({ title: "長さ未設定オフ会" });
+    expect(created.response.status).toBe(200);
+
+    const db = createDb(env.DB);
+    const rows = await db.select().from(event).where(eq(event.slug, created.slug));
+    expect(rows[0]?.durationMinutes).toBeNull();
   });
 });
 
