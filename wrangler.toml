@@ -13,9 +13,13 @@ database_name = "studio-parts"
 database_id = "85a1c700-2a0d-4ba4-b370-c28fca4e308e"
 migrations_dir = "migrations"
 
-# 本番のアクセスログに秘密 URL(合言葉付きの URL や主催者キーなど)が平文で
-# 残るため無効(仕様書「アクセスログに秘密 URL を平文で残さない」)。
-# `wrangler tail` は設定変更なしで使える。ただし画面に秘密 URL が表示されるので
-# 共有画面やスクリーンショットに注意。
+# 暫定的にデバッグ用として有効化している(本来は無効が既定)。有効にすると
+# invocation log にリクエスト URL がそのまま残るため、秘密である
+# `/e/{slug}/` の slug が Cloudflare のログ基盤に永続化される。これは
+# 仕様書「アクセスログに秘密 URL を平文で残さない」(docs/bandoff-spec.md
+# 2.2)に反する状態。**調査が終わったら enabled = false に戻すこと。**
+# ダッシュボードのログ画面には秘密 URL がそのまま表示されるため、共有画面や
+# スクリーンショットへの映り込みに注意する。
+# `wrangler tail` はこの設定と独立した別機能で、設定変更なしで使える。
 [observability]
-enabled = false
+enabled = true

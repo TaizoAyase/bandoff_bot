@@ -298,12 +298,27 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
   参照したままになる。
 - 無料枠の目安: Workers は 10万リクエスト/日、D1 は 5GB・500万行読み取り/日・
   10万行書き込み/日。
-- トラブル時のログ調査は `pnpm exec wrangler tail` でリアルタイムに見る
+- トラブル時にリアルタイムでログを見るには `pnpm exec wrangler tail` を使う
   (`[observability]` の設定変更は不要。Real-time Logs は Workers Logs
   の永続化設定とは独立した別機能で、`wrangler.toml` の変更なしにそのまま
-  使える)。ただし画面には合言葉付きの URL や主催者キーを含むリクエストが
-  そのまま表示されるため、共有画面やスクリーンショットへの映り込みに注意
-  する。
+  使える)。
+- Workers Logs(過去ログの永続化・ダッシュボードでの検索)は現在
+  **暫定的に有効化している**(`wrangler.toml` の `[observability]
+  enabled = true`)。原因不明の 403 などをデプロイ後に遡って調査するための
+  措置。**`wrangler.toml` の変更はデプロイして初めて反映される**ので、
+  有効化直後のデプロイより前のリクエストは記録されていない。
+  **調査が終わったら `enabled` を `false` に戻し、再デプロイすること。**
+  有効な間は invocation log にリクエスト URL がそのまま残るため、秘密で
+  ある `/e/{slug}/` の slug がダッシュボードに表示される(合言葉や主催者
+  キーは POST body の値でありレスポンスの `Location` やリンクにも現れない
+  ため、URL には載らない)。共有画面やスクリーンショットへの映り込みに
+  注意する(`wrangler tail` の画面と同様)。
+- CSRF ミドルウェア(`src/middleware/csrf.ts`)が 403 を返す直前には
+  `console.warn("csrf: rejected", …)` で、拒否理由(`Sec-Fetch-Site` /
+  `Origin` のどちらの分岐か)・拒否時のヘッダの状態・User-Agent を記録する
+  (slug の実値や cookie、入力値、Origin の生文字列は記録しない)。
+  ダッシュボードやログでこの文字列を検索すれば、どの分岐でどんなクライアント
+  が弾かれたかが分かる。
 
 ## トラブルシューティング
 

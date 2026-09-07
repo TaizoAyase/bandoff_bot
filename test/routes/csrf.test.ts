@@ -1,10 +1,11 @@
 import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDb } from "../../src/db/client";
 import { event as eventTable } from "../../src/db/schema";
 import app from "../../src/index";
-import { createTestClient } from "../helpers";
+import { redactPath } from "../../src/middleware/csrf";
+import { createEvent, createTestClient } from "../helpers";
 
 const SAME_ORIGIN = "http://localhost";
 
@@ -108,5 +109,56 @@ describe("CSRF: Sec-Fetch-Site を優先し、なければ Origin にフォー�
     const client = createTestClient();
     const response = await client.get("/");
     expect(response.status).toBe(200);
+  });
+});
+
+describe("redactPath: 診断ログに残す前に slug を伏せる", () => {
+  it("/e/{slug}/join の slug を * に置換する", () => {
+    expect(redactPath("/e/abcdefghijklmnopqrstuvwxyz/join")).toBe("/e/*/join");
+  });
+
+  it("/e/{slug}/ の slug を * に置換する", () => {
+    expect(redactPath("/e/abcdefghijklmnopqrstuvwxyz/")).toBe("/e/*/");
+  });
+
+  it("/e/ 配下でないパスはそのまま返す", () => {
+    expect(redactPath("/new")).toBe("/new");
+  });
+
+  it("戻り値に slug の実値を含まない", () => {
+    const slug = "abcdefghijklmnopqrstuvwxyz";
+    expect(redactPath(`/e/${slug}/join`)).not.toContain(slug);
+  });
+});
+
+describe("csrf: 403 の直前に診断ログを残す", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("/e/{slug}/join への拒否で、ログの path が redactPath を経由し slug を含まない", async () => {
+    const created = await createEvent();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Sec-Fetch-Site も Origin も付けないので Origin 検査(フォールバック)で
+    // 弾かれる。
+    const response = await app.request(
+      `/e/${created.slug}/join`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ joinCode: created.joinCode }).toString(),
+      },
+      env,
+    );
+    expect(response.status).toBe(403);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [, details] = warnSpy.mock.calls[0] as [string, Record<string, unknown>];
+    expect(details.path).toBe("/e/*/join");
+    // path 以外のフィールドを含め、slug の実値がどこにも紛れ込んでいない
+    // ことを確認する(将来フィールドを増やしたときの漏れも検知できるよう、
+    // オブジェクト全体を文字列化して検査する)。
+    expect(JSON.stringify(details)).not.toContain(created.slug);
   });
 });
