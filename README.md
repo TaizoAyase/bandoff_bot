@@ -232,7 +232,45 @@ pnpm exec wrangler secret put SESSION_SECRET
 ローカル用の値とは別の値にすること。** 後から値を変更すると全員の cookie が
 無効になり、参加者は合言葉の入力からやり直しになる。
 
-### 6. 本番 D1 にマイグレーションを適用する
+### 6. 本番用の Discord Bot を登録する(任意)
+
+エントリーの追加・辞退を Discord の1チャンネルに通知したい場合のみ行う。
+`DISCORD_BOT_TOKEN` と `DISCORD_CHANNEL_ID` の両方が揃うまで通知機能は完全に
+no-op になり、他の動作には影響しない。
+
+通知の送信そのものを Bot 経由にしているのは、フェーズ2で追加予定の
+スラッシュコマンドも同じ Bot で賄えるようにするため。Webhook のままだと
+「ウェブフック発行」と「Bot 導入」を別々に依頼することになり、対象サーバーの
+管理者ではないユーザーが管理者へ依頼する回数が増えてしまう。
+
+1. https://discord.com/developers/applications で「New Application」から
+   アプリを作る。**この作業自体は対象 Discord サーバーの管理者でなくてもできる。**
+2. 「Bot」タブで Token を発行してコピーする。**Token は発行直後しか
+   表示されず、再表示できない。** その場でコピーしておくこと。
+3. 「OAuth2」→「URL Generator」で招待用 URL を作る。SCOPES は `bot` と
+   `applications.commands` の両方にチェックし、BOT PERMISSIONS は
+   「View Channels」(チャンネルを見る)と「Send Messages」(メッセージを
+   送信)(`permissions=3072`)を選ぶ。生成された URL を対象サーバーの
+   **管理者に渡し、導入してもらう**(導入には「サーバーの管理」権限が必要)。
+   スコープに `applications.commands` を含めておくのは、将来スラッシュ
+   コマンドを足すときに管理者へ再度依頼しなくて済むようにするため。
+4. Discord クライアントの設定で開発者モードを有効にし、通知したい
+   チャンネルを右クリック →「チャンネル ID をコピー」で ID を取得する。
+5. 登録する。
+
+   ```sh
+   pnpm exec wrangler secret put DISCORD_BOT_TOKEN
+   pnpm exec wrangler secret put DISCORD_CHANNEL_ID
+   ```
+
+   それぞれのプロンプトに手順2・4で取得した値を貼り付ける。
+
+**Bot Token は Bot として対象チャンネルに投稿できる資格情報。** ローカルで
+試す場合の `.dev.vars` への記入も含め、Issue・チャット等で共有したり commit
+したりしないこと。漏れた場合は Developer Portal の「Bot」タブから Token を
+Regenerate する。
+
+### 7. 本番 D1 にマイグレーションを適用する
 
 手順4で `database_id` を書き写していないと(プレースホルダ
 `PLACEHOLDER_REPLACE_AFTER_D1_CREATE` のままだと)、ここで失敗して止まる。
@@ -247,7 +285,7 @@ pnpm exec wrangler secret put SESSION_SECRET
 pnpm db:migrate:remote
 ```
 
-### 7. デプロイする
+### 8. デプロイする
 
 ```sh
 pnpm deploy
@@ -260,7 +298,7 @@ lint・型チェック・テスト・クライアント JS のビルドを行っ
 deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド)は API を
 呼ばないため、`database_id` が不正な値のままでも成功してしまう点に注意する。
 
-### 8. デプロイ後の確認
+### 9. デプロイ後の確認
 
 - `/` が 200 で返る
 - `/robots.txt` が `Disallow: /` を返す
@@ -269,7 +307,7 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
 - レスポンスに CSP・`X-Robots-Tag`・`Referrer-Policy` などのセキュリティ
   ヘッダが付与されている
 
-### 9. 運用メモ
+### 10. 運用メモ
 
 - バックアップは月1回程度を目安に取る(仕様書 9.3)。上書きされないよう
   ファイル名に日付を入れる。
@@ -344,9 +382,8 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
 フェーズ2・3として記載があるものと、章としての言及はないが現時点で単に
 未実装のものが混ざっている。
 
-- Discord Bot(スラッシュコマンド、Interactions)= フェーズ2
-- エントリー変更の Discord Webhook 通知(`src/domain/hooks.ts` にフック地点
-  だけがあり no-op)
+- スラッシュコマンド(`/bandoff list`・`/bandoff open`)と Interactions
+  エンドポイント = フェーズ2。通知用の Bot 導入はフェーズ1で完了済み
 - 告知の自動化 = フェーズ3
 - イベントの削除、参加者の削除(仕様書10章に言及はなく、単に未実装)
 - 動的ポーリング間隔、ETag/304(仕様書の判断基準に達したら検討)
