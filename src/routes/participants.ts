@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import {
+  findSlotLabelInfo,
   findSlotWithContext,
   joinSlot,
   leaveAllSlots,
@@ -12,7 +13,6 @@ import {
 } from "../db/queries/participants";
 import { deriveMyAssignments, loadEventTree } from "../db/queries/songs";
 import { sha256Hex } from "../domain/crypto";
-import { onEntryChanged } from "../domain/hooks";
 import { newAccessKey, newId, newToken, normalizeAccessKey } from "../domain/ids";
 import { parseInstrumentsInput } from "../domain/instruments";
 import { buildPasteText } from "../domain/paste-text";
@@ -25,6 +25,7 @@ import {
   requireViewer,
 } from "../middleware/guards";
 import { setSession } from "../middleware/session";
+import { notifyEntryChanged } from "../notify/entry-changed";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { ParticipantsPage, parseParticipantsNotice } from "../views/pages/participants";
 import { RegisterPage } from "../views/pages/register";
@@ -85,16 +86,20 @@ participantsApp.post("/participants/:id/leave-all", requireOrganizer, async (c) 
 
   await leaveAllSlots(db, { eventId: event.id, participantId: targetParticipantId });
 
-  for (const entry of entries) {
-    onEntryChanged({
-      type: "leave",
-      eventId: event.id,
-      participantId: targetParticipantId,
+  // 10曲に入っている人を辞退させると Bot への POST を10連射することになり、
+  // Discord のレート制限(おおよそ 5 リクエスト / 2 秒)に当たって後半が
+  // 捨てられる。1件ずつ送らず、まとめて1通の箇条書きにする。
+  notifyEntryChanged(
+    c,
+    entries.map((entry) => ({
+      type: "leave" as const,
+      eventTitle: event.title,
       participantName: target.displayName,
       songTitle: entry.songTitle,
       slotLabel: entry.slotLabel,
-    });
-  }
+      takeOrdinal: entry.takeOrdinal,
+    })),
+  );
 
   return c.redirect(`/e/${event.slug}/participants?notice=left-all`, 303);
 });
@@ -211,14 +216,19 @@ participantsApp.post(
         const joinResult = await joinSlot(db, { slotId: slot, participantId, now });
         if (joinResult.kind === "joined") {
           entryResult = `${context.slot.instrument} に入りました`;
-          onEntryChanged({
-            type: "join",
-            eventId: event.id,
-            participantId,
-            participantName: result.value.displayName,
-            songTitle: context.song.title,
-            slotLabel: context.slot.instrument,
-          });
+          // UI(/me・参加者一覧)と表記を揃えるため、通知には採番済みラベル
+          // (「Gt1」等)と Take の回数を使う(songs.ts の join/leave と同じ)。
+          const labelInfo = await findSlotLabelInfo(db, context.song.id, slot);
+          notifyEntryChanged(c, [
+            {
+              type: "join",
+              eventTitle: event.title,
+              participantName: result.value.displayName,
+              songTitle: context.song.title,
+              slotLabel: labelInfo?.slotLabel ?? context.slot.instrument,
+              takeOrdinal: labelInfo?.takeOrdinal ?? null,
+            },
+          ]);
         } else {
           entryResult = "先を越されました";
         }

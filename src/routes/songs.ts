@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import {
   findParticipantAssignmentInTake,
+  findSlotLabelInfo,
   findSlotWithContext,
   joinSlot,
   leaveSlot,
@@ -13,7 +14,6 @@ import {
   findSongContext,
   updateSong,
 } from "../db/queries/songs";
-import { onEntryChanged } from "../domain/hooks";
 import { DEFAULT_SLOTS } from "../domain/instruments";
 import {
   canAddSong,
@@ -29,6 +29,7 @@ import {
   requireParticipant,
   requireViewer,
 } from "../middleware/guards";
+import { notifyEntryChanged } from "../notify/entry-changed";
 import { ConfirmJoinPage } from "../views/pages/confirm";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { SongEditPage } from "../views/pages/song-edit";
@@ -320,14 +321,21 @@ songsApp.post("/slots/:id/join", async (c) => {
     return renderPage(c, TakenPage({ slug: event.slug }), 409);
   }
 
-  onEntryChanged({
-    type: "join",
-    eventId: event.id,
-    participantId: targetParticipant.id,
-    participantName: targetParticipant.displayName,
-    songTitle: context.song.title,
-    slotLabel: context.slot.instrument,
-  });
+  // UI(/me・参加者一覧)は `numberInstruments` で「Gt1」「Gt2」と採番済みの
+  // ラベルを表示している。生の `context.slot.instrument` をそのまま流すと
+  // 同じ楽器が複数枠あるとき Discord 側でどちらか分からなくなるため、
+  // 通知も同じ採番済みラベル・回数表記に揃える。
+  const labelInfo = await findSlotLabelInfo(db, context.song.id, slotId);
+  notifyEntryChanged(c, [
+    {
+      type: "join",
+      eventTitle: event.title,
+      participantName: targetParticipant.displayName,
+      songTitle: context.song.title,
+      slotLabel: labelInfo?.slotLabel ?? context.slot.instrument,
+      takeOrdinal: labelInfo?.takeOrdinal ?? null,
+    },
+  ]);
 
   return c.redirect(`/e/${event.slug}/?notice=joined#song-${context.song.id}`, 303);
 });
@@ -370,16 +378,22 @@ songsApp.post("/slots/:id/leave", async (c) => {
     return c.text("Forbidden", 403);
   }
 
+  // leaveSlot で Assignment が消える前に採番情報を取っておく必要はない
+  // (ラベルは Slot の並びから決まり、Assignment の有無に依存しない)。
+  const labelInfo = await findSlotLabelInfo(db, context.song.id, slotId);
+
   await leaveSlot(db, slotId);
 
-  onEntryChanged({
-    type: "leave",
-    eventId: event.id,
-    participantId: context.assignment.participantId,
-    participantName: context.assignment.participantName,
-    songTitle: context.song.title,
-    slotLabel: context.slot.instrument,
-  });
+  notifyEntryChanged(c, [
+    {
+      type: "leave",
+      eventTitle: event.title,
+      participantName: context.assignment.participantName,
+      songTitle: context.song.title,
+      slotLabel: labelInfo?.slotLabel ?? context.slot.instrument,
+      takeOrdinal: labelInfo?.takeOrdinal ?? null,
+    },
+  ]);
 
   return c.redirect(`/e/${event.slug}/?notice=left#song-${context.song.id}`, 303);
 });

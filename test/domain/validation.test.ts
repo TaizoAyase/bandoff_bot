@@ -3,15 +3,24 @@ import { STARTS_TIME_OPTIONS } from "../../src/domain/starts-time";
 import {
   LIMITS,
   normalizeJoinCode,
+  validateArtist,
   validateDisplayName,
   validateDurationMinutes,
   validateEventEditForm,
+  validateEventTitle,
   validateJoinCode,
   validateNewEventForm,
+  validateNotes,
   validateParticipantForm,
+  validatePlace,
   validateRefUrl,
+  validateRegion,
   validateSlotForm,
+  validateSlotNote,
   validateSongForm,
+  validateSongKey,
+  validateSongSlots,
+  validateSongTitle,
   validateStartsDate,
   validateStartsTime,
 } from "../../src/domain/validation";
@@ -35,6 +44,18 @@ describe("validateDisplayName", () => {
   it("accepts a name at exactly the 30 character limit", () => {
     const result = validateDisplayName("a".repeat(30));
     expect(result.ok).toBe(true);
+  });
+
+  it("strips newlines instead of rejecting (single-line field)", () => {
+    // <input type="text"> はキー入力での改行を防ぐが、生の HTTP POST では
+    // 改行を送信できてしまう。単一行フィールドはエラーにせず除去して継続する。
+    const result = validateDisplayName("山田\n太郎");
+    expect(result).toEqual({ ok: true, value: "山田 太郎" });
+  });
+
+  it("strips other C0 control characters (not just newlines)", () => {
+    const result = validateDisplayName("山田\x1F太郎\x7F");
+    expect(result).toEqual({ ok: true, value: "山田 太郎" });
   });
 });
 
@@ -60,6 +81,57 @@ describe("validateRefUrl", () => {
   it("rejects URLs over the 500 character limit", () => {
     const longUrl = `https://example.com/${"a".repeat(500)}`;
     expect(validateRefUrl(longUrl).ok).toBe(false);
+  });
+});
+
+describe("control character stripping (single-line fields)", () => {
+  // <input type="text"> に対応する単一行フィールドは、改行を含む C0 制御
+  // 文字をエラーにせず半角スペースへ除去して継続する
+  // (src/domain/validation.ts の CONTROL_CHAR_PATTERN 参照)。
+
+  it("validateEventTitle strips control characters", () => {
+    expect(validateEventTitle("テスト\rオフ会")).toEqual({
+      ok: true,
+      value: "テスト オフ会",
+    });
+  });
+
+  it("validateRegion strips control characters", () => {
+    expect(validateRegion("東京\n都")).toEqual({ ok: true, value: "東京 都" });
+  });
+
+  it("validatePlace strips control characters", () => {
+    expect(validatePlace("スタジオ\nA")).toEqual({ ok: true, value: "スタジオ A" });
+  });
+
+  it("validateSongTitle strips control characters", () => {
+    expect(validateSongTitle("偽の曲\n〔別オフ会〕")).toEqual({
+      ok: true,
+      value: "偽の曲 〔別オフ会〕",
+    });
+  });
+
+  it("validateArtist strips control characters", () => {
+    expect(validateArtist("アーティスト\n名")).toEqual({
+      ok: true,
+      value: "アーティスト 名",
+    });
+  });
+
+  it("validateSongKey strips control characters", () => {
+    expect(validateSongKey("C\nm")).toEqual({ ok: true, value: "C m" });
+  });
+
+  it("validateSlotNote strips control characters", () => {
+    expect(validateSlotNote("メモ\n改行")).toEqual({ ok: true, value: "メモ 改行" });
+  });
+
+  it("validateNotes keeps newlines (textarea-backed multi-line field)", () => {
+    // notes は複数行が正当な内容(イベント詳細・曲の備考など)のフィールド
+    // なので、他の単一行フィールドと違って改行を保持しなければならない
+    // (将来ここが一律で潰されるのを防ぐ回帰テスト)。
+    const value = "1行目\n2行目\r\n3行目";
+    expect(validateNotes(value)).toEqual({ ok: true, value });
   });
 });
 
@@ -263,6 +335,30 @@ describe("validateSlotForm", () => {
   it("rejects a note over the 50 character limit", () => {
     const result = validateSlotForm({ instrument: "Gt", note: "a".repeat(51) });
     expect(result.ok).toBe(false);
+  });
+
+  it("strips control characters from the instrument field", () => {
+    const result = validateSlotForm({ instrument: "Gt\n1", note: "" });
+    expect(result).toEqual({ ok: true, value: { instrument: "Gt 1", note: "" } });
+  });
+});
+
+describe("validateSongSlots", () => {
+  it("accepts a valid list of instruments", () => {
+    expect(validateSongSlots(["Gt", "Ba"])).toEqual({ ok: true, value: ["Gt", "Ba"] });
+  });
+
+  it("strips control characters from each instrument", () => {
+    const result = validateSongSlots(["Gt\n1", "Ba\x7F"]);
+    expect(result).toEqual({ ok: true, value: ["Gt 1", "Ba"] });
+  });
+
+  it("ignores blank rows", () => {
+    expect(validateSongSlots(["Gt", "", "  "])).toEqual({ ok: true, value: ["Gt"] });
+  });
+
+  it("rejects when there are no non-blank rows", () => {
+    expect(validateSongSlots(["", "  "]).ok).toBe(false);
   });
 });
 

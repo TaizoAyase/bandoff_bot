@@ -34,6 +34,30 @@ export const LIMITS = {
   MAX_SONGS_PER_EVENT: 200,
 } as const;
 
+/**
+ * 改行(`\r\n`/`\r`/`\n`)を含む C0 制御文字全般(`\x00`–`\x1F`、
+ * `\x7F`)を半角スペースに置換する。
+ *
+ * `<input type="text">` に対応する単一行フィールド(表示名・曲名・楽器名・
+ * イベント名・地域・場所など)にだけ適用すること。`notes` のような
+ * textarea 由来の複数行フィールドにこれを通してはいけない(改行がその
+ * フィールドの正当な内容のため)。
+ *
+ * 改行を落とす理由: これらの値は Discord 通知本文(1件1行のプレーン
+ * テキスト、`src/domain/notify-message.ts` 参照)にそのまま埋め込まれる。
+ * ブラウザの `<input type="text">` は改行入力を防ぐが、CSRF 検査は
+ * Origin の一致しか見ていないため、生の HTTP POST を投げれば改行を含む
+ * 値を送信できてしまう。表示名に改行を仕込むことで、2行目以降が別の
+ * 正規の通知行に見える偽の通知を作れる(通知側でも同じ理由で潰している
+ * が、DB に保存される値そのものからも落としておく)。
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字そのものを検出して潰すための意図的な正規表現。
+const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/g;
+
+function stripControlChars(value: string): string {
+  return value.replace(CONTROL_CHAR_PATTERN, " ");
+}
+
 function requiredText(value: string, max: number, label: string): FieldResult<string> {
   const trimmed = value.trim();
   if (trimmed === "") {
@@ -55,47 +79,50 @@ function optionalText(value: string, max: number, label: string): FieldResult<st
 
 /** 表示名(参加者・主催者の名前)を検証する。 */
 export function validateDisplayName(value: string): FieldResult<string> {
-  return requiredText(value, LIMITS.DISPLAY_NAME_MAX, "表示名");
+  return requiredText(stripControlChars(value), LIMITS.DISPLAY_NAME_MAX, "表示名");
 }
 
 /** イベントタイトルを検証する。 */
 export function validateEventTitle(value: string): FieldResult<string> {
-  return requiredText(value, LIMITS.EVENT_TITLE_MAX, "イベント名");
+  return requiredText(stripControlChars(value), LIMITS.EVENT_TITLE_MAX, "イベント名");
 }
 
 /** 地域(必須)を検証する。 */
 export function validateRegion(value: string): FieldResult<string> {
-  return requiredText(value, LIMITS.REGION_MAX, "地域");
+  return requiredText(stripControlChars(value), LIMITS.REGION_MAX, "地域");
 }
 
 /** 開催場所を検証する。 */
 export function validatePlace(value: string): FieldResult<string> {
-  return requiredText(value, LIMITS.PLACE_MAX, "場所");
+  return requiredText(stripControlChars(value), LIMITS.PLACE_MAX, "場所");
 }
 
 /** 曲名を検証する。 */
 export function validateSongTitle(value: string): FieldResult<string> {
-  return requiredText(value, LIMITS.SONG_TITLE_MAX, "曲名");
+  return requiredText(stripControlChars(value), LIMITS.SONG_TITLE_MAX, "曲名");
 }
 
 /** アーティスト名(任意)を検証する。 */
 export function validateArtist(value: string): FieldResult<string> {
-  return optionalText(value, LIMITS.ARTIST_MAX, "アーティスト");
+  return optionalText(stripControlChars(value), LIMITS.ARTIST_MAX, "アーティスト");
 }
 
 /** キー(任意)を検証する。 */
 export function validateSongKey(value: string): FieldResult<string> {
-  return optionalText(value, LIMITS.SONG_KEY_MAX, "キー");
+  return optionalText(stripControlChars(value), LIMITS.SONG_KEY_MAX, "キー");
 }
 
-/** 備考(任意)を検証する。曲・イベント共通。 */
+/**
+ * 備考(任意)を検証する。曲・イベント共通。textarea 由来の複数行
+ * フィールドなので、`stripControlChars` を通さず改行を保持する。
+ */
 export function validateNotes(value: string): FieldResult<string> {
   return optionalText(value, LIMITS.NOTES_MAX, "備考");
 }
 
 /** 枠のメモ(任意)を検証する。 */
 export function validateSlotNote(value: string): FieldResult<string> {
-  return optionalText(value, LIMITS.SLOT_NOTE_MAX, "メモ");
+  return optionalText(stripControlChars(value), LIMITS.SLOT_NOTE_MAX, "メモ");
 }
 
 /** 参考URL(任意)を検証する。http/https のみ許可する。 */
@@ -471,7 +498,9 @@ export function validateParticipantForm(
 export function validateSongSlots(
   rawInstruments: string[],
 ): ValidationResult<string[]> {
-  const trimmed = rawInstruments.map((v) => v.trim()).filter((v) => v !== "");
+  const trimmed = rawInstruments
+    .map((v) => stripControlChars(v).trim())
+    .filter((v) => v !== "");
 
   if (trimmed.length === 0) {
     return { ok: false, errors: { instruments: "パートを1つ以上追加してください" } };
@@ -511,7 +540,11 @@ export function validateSlotForm(
 ): ValidationResult<SlotFormValue> {
   const errors: Record<string, string> = {};
 
-  const instrument = requiredText(input.instrument, LIMITS.INSTRUMENT_NAME_MAX, "楽器");
+  const instrument = requiredText(
+    stripControlChars(input.instrument),
+    LIMITS.INSTRUMENT_NAME_MAX,
+    "楽器",
+  );
   if (!instrument.ok) errors.instrument = instrument.error;
 
   const note = validateSlotNote(input.note);
