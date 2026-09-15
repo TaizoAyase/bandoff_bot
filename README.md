@@ -94,29 +94,42 @@ src/
     takes.ts           Take・Slot の追加・削除(枠構成そのものの増減)
     me.ts              自分のエントリー一覧・設定(プロフィール編集・端末解除・参加の取りやめ)
     organizer.ts       主催者ログイン・イベント編集・JSON エクスポート
+    discord-interactions.ts  `POST /discord/interactions`(署名検証・3コマンド)
+    discord-link.ts    `/e/:slug/discord` 配下(発行済みリンクの消費・紐付け・解除)
+  discord/          Discord Interactions 固有の低レイヤ
+    verify.ts           Ed25519 署名検証(WebCrypto)
+    interaction.ts        interaction JSON の型ガード・取り出し(純関数)
   views/            Hono JSX。JSX が閉じ込められているのはここだけ
     layout.tsx        全ページ共通レイアウト(OGP なし、CSP 準拠)
     render.tsx         DOCTYPE 付与のヘルパ
-    pages/              1ページ1コンポーネント
+    pages/              1ページ1コンポーネント(discord-open.tsx はリンク消費用の中継ページ)
     components/          複数ページで共有する部品(曲カード・枠一覧など)
   db/
     schema.ts          Drizzle ORM のテーブル定義
     client.ts            D1 バインディングから Drizzle クライアントを作る
     queries/              テーブルごとのクエリ関数(SQL はここに閉じる)
+      discord-links.ts       discord_link の発行・消費・掃除
   domain/           DB にもリクエストにも触れない純粋関数
     permissions.ts       仕様 4章の権限表の実装
     validation.ts         各フォームの入力検証・上限値
+    discord.ts             候補イベントの条件・表示名の初期値の正規化など
+    discord-message.ts       候補名・list の本文・ボタンの組み立て
     crypto.ts / ids.ts / time.ts / instruments.ts / rate-limit.ts / hooks.ts など
   client/           ブラウザで動く最小限の TypeScript(esbuild でバンドル)
     main.ts             data-page で処理を分岐するエントリポイント
     polling.ts             曲一覧の自動更新(非アクティブタブで停止)
     session.ts / storage.ts  端末トークン・復帰キーの localStorage 操作
     ui.ts                  確認ダイアログ・コピー操作などの汎用 UI 配線
+    discord.ts              `/e/:slug/discord` のフラグメント読み取り・トークン消費
 migrations/         drizzle-kit generate の出力 + 既定 Workspace 投入用の手書き SQL
 public/             静的アセット(robots.txt、CSS、esbuild が吐く js/ は gitignore)
+scripts/            開発用スクリプト。build-client.mjs(クライアント JS ビルド)、
+                    discord-commands.json・register-discord-commands.mjs
+                    (スラッシュコマンド登録、`pnpm discord:register`)
 test/
   domain/*.test.ts    純粋関数の単体テスト
   routes/*.test.ts     ルートの結合テスト(`app.request()` + cookie jar)
+  discord/*.test.ts     署名検証・コマンド定義 JSON など Discord 固有の単体テスト
   helpers.ts            テスト用のイベント作成・ログイン・曲登録などのヘルパ
 ```
 
@@ -241,8 +254,8 @@ Discord の1チャンネルに通知したい場合のみ行う(詳細は
 `DISCORD_CHANNEL_ID` の両方が揃うまで通知機能は完全に no-op になり、他の
 動作には影響しない。
 
-通知の送信そのものを Bot 経由にしているのは、フェーズ2で追加予定の
-スラッシュコマンドも同じ Bot で賄えるようにするため。Webhook のままだと
+通知の送信そのものを Bot 経由にしているのは、手順7のスラッシュコマンドも
+同じ Bot で賄えるようにするため。Webhook のままだと
 「ウェブフック発行」と「Bot 導入」を別々に依頼することになり、対象サーバーの
 管理者ではないユーザーが管理者へ依頼する回数が増えてしまう。
 
@@ -273,7 +286,36 @@ Discord の1チャンネルに通知したい場合のみ行う(詳細は
 したりしないこと。漏れた場合は Developer Portal の「Bot」タブから Token を
 Regenerate する。
 
-### 7. 本番 D1 にマイグレーションを適用する
+### 7. 本番用のスラッシュコマンドを有効にする(任意)
+
+Discord から `/bandoff open`・`/bandoff list`・`/bandoff new` を使えるように
+したい場合のみ行う(詳細は `docs/bandoff-spec.md` の2.3節を参照)。手順6の
+通知用 Bot とは独立した設定で、`DISCORD_PUBLIC_KEY` と `DISCORD_GUILD_ID` の
+両方が揃うまでコマンドは完全に無効(`POST /discord/interactions` は 404)の
+ままで、他の動作には影響しない。招待スコープには手順6の時点で既に
+`applications.commands` を含めているため、対象サーバーの管理者への再依頼は
+不要。
+
+1. https://discord.com/developers/applications の対象アプリの「General
+   Information」タブで **Public Key**(16進64文字)を控える。サーバー
+   (ギルド)ID は Discord クライアントの開発者モードを有効にし、対象
+   サーバーを右クリック →「サーバー ID をコピー」で取得する。
+2. 登録する。
+
+   ```sh
+   pnpm exec wrangler secret put DISCORD_PUBLIC_KEY
+   pnpm exec wrangler secret put DISCORD_GUILD_ID
+   ```
+
+   それぞれのプロンプトに手順1で取得した値を貼り付ける。コマンドが使う
+   `event.discord_enabled` 列・`discord_link` テーブルは、次の「D1 に
+   マイグレーションを適用する」で通常のマイグレーションの一部として
+   追加されるので、この機能専用のマイグレーション手順はない。
+3. Interactions Endpoint の設定とコマンド自体の登録は、デプロイが済んで
+   いないと Discord 側の検証が通らないため、手順9(デプロイする)の後の
+   「Interactions Endpoint を設定し、コマンドを登録する」にまとめてある。
+
+### 8. 本番 D1 にマイグレーションを適用する
 
 手順4で `database_id` を書き写していないと(プレースホルダ
 `PLACEHOLDER_REPLACE_AFTER_D1_CREATE` のままだと)、ここで失敗して止まる。
@@ -288,7 +330,7 @@ Regenerate する。
 pnpm db:migrate:remote
 ```
 
-### 8. デプロイする
+### 9. デプロイする
 
 ```sh
 pnpm deploy
@@ -301,7 +343,35 @@ lint・型チェック・テスト・クライアント JS のビルドを行っ
 deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド)は API を
 呼ばないため、`database_id` が不正な値のままでも成功してしまう点に注意する。
 
-### 9. デプロイ後の確認
+### 10. Interactions Endpoint を設定し、コマンドを登録する(手順7を行った場合のみ)
+
+手順7で `DISCORD_PUBLIC_KEY` / `DISCORD_GUILD_ID` を登録した場合のみ行う。
+デプロイ(手順9)が済んでいる必要がある。
+
+1. Developer Portal の「General Information」タブの **Interactions
+   Endpoint URL** に `https://<公開ホスト>/discord/interactions` を設定して
+   保存する。保存時に Discord が PING と、わざと不正な署名を付けた
+   リクエストを送って検証するため、デプロイより先に設定すると検証に
+   失敗して保存できない。
+2. コマンドをサーバーに登録する。`.dev.vars.register`(gitignore 済み)を
+   作り、以下の3つを書いてから実行する。
+
+   ```sh
+   pnpm discord:register
+   ```
+
+   - `DISCORD_APPLICATION_ID` — Developer Portal の「General Information」
+     タブにある Application ID
+   - `DISCORD_GUILD_ID` — 手順7で取得した値と同じもの
+   - `DISCORD_BOT_TOKEN` — 手順6で発行した値と同じもの
+
+   これら3つは登録スクリプト(`scripts/register-discord-commands.mjs`)
+   だけが読む値で、Worker の secret にはしない(`wrangler secret put` は
+   不要)。ギルドコマンドは登録後すぐに反映される。コマンド定義
+   (`scripts/discord-commands.json`)を変更した場合は再度実行すれば
+   上書きされる。**このスクリプトの実行は手元の端末から行う。**
+
+### 11. デプロイ後の確認
 
 - `/` が 200 で返る
 - `/robots.txt` が `Disallow: /` を返す
@@ -309,8 +379,11 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
 - `/new` からイベントを作成し、発行された合言葉でそのイベントに入れる
 - レスポンスに CSP・`X-Robots-Tag`・`Referrer-Policy` などのセキュリティ
   ヘッダが付与されている
+- 手順7・10を行った場合: Discord サーバーで `/bandoff list`・`/bandoff open`・
+  `/bandoff new` が候補として表示され、`/bandoff open` で発行されたリンクを
+  開くと該当イベントの曲一覧に入れる
 
-### 10. 運用メモ
+### 12. 運用メモ
 
 - バックアップは月1回程度を目安に取る(仕様書 9.3)。上書きされないよう
   ファイル名に日付を入れる。
@@ -385,8 +458,6 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
 フェーズ2・3として記載があるものと、章としての言及はないが現時点で単に
 未実装のものが混ざっている。
 
-- スラッシュコマンド(`/bandoff list`・`/bandoff open`)と Interactions
-  エンドポイント = フェーズ2。通知用の Bot 導入はフェーズ1で完了済み
 - 告知の自動化 = フェーズ3
 - イベントの削除(仕様書10章に言及はなく、単に未実装)
 - 動的ポーリング間隔、ETag/304(仕様書の判断基準に達したら検討)
