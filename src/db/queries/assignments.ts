@@ -1,5 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { newId } from "../../domain/ids";
+import { numberInstruments } from "../../domain/instruments";
 import type { Db } from "../client";
 import {
   assignment,
@@ -184,6 +185,81 @@ export async function findSlotWithContext(
             participantName: row.assignmentParticipantName,
           }
         : null,
+  };
+}
+
+export interface SlotLabelInfo {
+  /** `Gt1`/`Gt2` のように、同じ Take 内の同名楽器へ自動採番したラベル。 */
+  slotLabel: string;
+  /** その曲の Take が2件以上のときだけ値を持つ(`deriveMyAssignments` と同じ規則)。 */
+  takeOrdinal: number | null;
+}
+
+/**
+ * 指定した slot の「採番済みラベル」(`Gt1`/`Gt2` 等)と「Take の n回目」を、
+ * `/me` 一覧(`deriveMyAssignments`)と同じ規則で求める。Discord 通知の
+ * 本文組み立て専用。曲に属する Take・Slot を(`take.sort_order`,
+ * `slot.sort_order`)順で1クエリ取得し、メモリ上で `numberInstruments` を
+ * 適用する。呼び出し側は既に `findSlotWithContext` で `songId` を
+ * 取得済みの前提。
+ *
+ * `leftJoin` にしているのは、枠を全部削除した(枠数0の)Take を
+ * 「n回目」の数え上げから落とさないため。`loadEventTree` は take と
+ * slot を別クエリで引き、`slots: slotsByTakeId.get(t.id) ?? []` で
+ * 空配列を許して全 Take を走査するため、`deriveMyAssignments` の
+ * `takeIndex`/`showOrdinal` は空の Take も数える。`innerJoin` だと
+ * 枠0個の Take がそもそも結果に現れず、この数え方とズレてしまう。
+ */
+export async function findSlotLabelInfo(
+  db: Db,
+  songId: string,
+  slotId: string,
+): Promise<SlotLabelInfo | null> {
+  const rows = await db
+    .select({
+      takeId: take.id,
+      slotId: slot.id,
+      slotInstrument: slot.instrument,
+    })
+    .from(take)
+    .leftJoin(slot, eq(slot.takeId, take.id))
+    .where(eq(take.songId, songId))
+    .orderBy(asc(take.sortOrder), asc(slot.sortOrder));
+
+  const takeOrder: string[] = [];
+  const slotsByTakeId = new Map<string, { id: string; instrument: string }[]>();
+  for (const row of rows) {
+    let list = slotsByTakeId.get(row.takeId);
+    if (!list) {
+      list = [];
+      slotsByTakeId.set(row.takeId, list);
+      takeOrder.push(row.takeId);
+    }
+    // leftJoin なので、枠が1つも無い Take は slotId/slotInstrument が
+    // null の行として1件だけ現れる。Take 自体は takeOrder に登録済み
+    // なので、ここでは単に枠のリストへの追加をスキップする。
+    if (row.slotId !== null && row.slotInstrument !== null) {
+      list.push({ id: row.slotId, instrument: row.slotInstrument });
+    }
+  }
+
+  const targetTakeId = takeOrder.find((takeId) =>
+    slotsByTakeId.get(takeId)?.some((s) => s.id === slotId),
+  );
+  if (!targetTakeId) {
+    return null;
+  }
+  const takeSlots = slotsByTakeId.get(targetTakeId) ?? [];
+  const slotIndex = takeSlots.findIndex((s) => s.id === slotId);
+  const targetSlot = takeSlots[slotIndex];
+  if (slotIndex < 0 || !targetSlot) {
+    return null;
+  }
+  const labels = numberInstruments(takeSlots.map((s) => s.instrument));
+
+  return {
+    slotLabel: labels[slotIndex] ?? targetSlot.instrument,
+    takeOrdinal: takeOrder.length > 1 ? takeOrder.indexOf(targetTakeId) + 1 : null,
   };
 }
 

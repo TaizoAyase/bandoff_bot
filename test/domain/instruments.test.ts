@@ -58,6 +58,12 @@ describe("normalizeInstruments", () => {
     const long = "a".repeat(30);
     expect(normalizeInstruments([long])).toEqual(["a".repeat(20)]);
   });
+
+  it("strips newlines and other C0 control characters instead of rejecting", () => {
+    // <input type="text"> の持ち込み楽器欄は単一行フィールドなので、改行や
+    // 制御文字はエラーにせず半角スペースへ除去して継続する。
+    expect(normalizeInstruments(["Gt\n1", "Ba\x1F\x7F"])).toEqual(["Gt 1", "Ba"]);
+  });
 });
 
 describe("parseInstrumentsInput", () => {
@@ -87,5 +93,9 @@ describe("parseInstrumentsInput", () => {
 
   it("handles an empty string", () => {
     expect(parseInstrumentsInput("")).toEqual([]);
+  });
+
+  it("strips newlines injected via a raw HTTP POST (bypassing the <input> restriction)", () => {
+    expect(parseInstrumentsInput("Gt\n1,Ba")).toEqual(["Gt 1", "Ba"]);
   });
 });

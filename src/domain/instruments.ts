@@ -33,6 +33,21 @@ export function numberInstruments(instruments: readonly string[]): string[] {
 const INSTRUMENTS_INPUT_SEPARATOR = /[,、，]/;
 
 /**
+ * 改行を含む C0 制御文字全般を半角スペースに置換する。この関数を通すのは
+ * `<input type="text">` の持ち込み楽器欄(カンマ区切りの単一行フィールド)
+ * のみで、改行を保持すべきフィールドには使わない。改行を残すと、Discord
+ * 通知本文(1件1行のプレーンテキスト、`src/domain/notify-message.ts`
+ * 参照)に埋め込んだときに偽の通知行を作れてしまうため、DB に保存する
+ * 値そのものから落としておく。
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字そのものを検出して潰すための意図的な正規表現。
+const CONTROL_CHAR_PATTERN = /[\x00-\x1F\x7F]/g;
+
+function stripControlChars(value: string): string {
+  return value.replace(CONTROL_CHAR_PATTERN, " ");
+}
+
+/**
  * カンマ区切りの自由入力(例: `"Gt, Ba"` `"Gt、Ba"`)を配列に分解し、正規化する。
  * フォームの1テキスト入力から持ち込み楽器のリストを受け取るときに使う。
  */
@@ -48,7 +63,7 @@ export function normalizeInstruments(list: readonly string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const raw of list) {
-    const trimmed = raw.trim().slice(0, INSTRUMENT_NAME_MAX_LENGTH);
+    const trimmed = stripControlChars(raw).trim().slice(0, INSTRUMENT_NAME_MAX_LENGTH);
     if (trimmed === "" || seen.has(trimmed)) {
       continue;
     }

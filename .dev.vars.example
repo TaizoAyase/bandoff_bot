@@ -3,3 +3,14 @@
 # 本番は `wrangler secret put SESSION_SECRET` で別途登録する。ローカルと
 # 同じ値を使い回さないこと。
 SESSION_SECRET=
+
+# エントリーの追加・辞退を Discord の Bot 経由で通知する(任意)。
+# 両方設定して初めて通知が有効になる。片方でも未設定なら通知は行わない。
+# Discord Developer Portal (https://discord.com/developers/applications) で
+# アプリを作り、Bot タブで Token を発行する。この Token 自体が Bot として
+# 投稿できる資格情報なので、共有・コミットしない。
+DISCORD_BOT_TOKEN=
+
+# 通知を投稿するチャンネルの ID(snowflake)。Discord の設定で開発者モードを
+# 有効にし、対象チャンネルを右クリック →「チャンネル ID をコピー」で取得する。
+DISCORD_CHANNEL_ID=

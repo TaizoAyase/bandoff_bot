@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { createExecutionContext, env } from "cloudflare:test";
 import { asc, eq } from "drizzle-orm";
 import { createDb } from "../src/db/client";
 import { event as eventTable, slot, song, take } from "../src/db/schema";
@@ -32,6 +32,13 @@ export interface TestClient {
   ): Promise<Response>;
   /** 現在 jar に保持している Cookie ヘッダの値。 */
   cookieHeader(): string | undefined;
+  /**
+   * 直近のリクエストに使った `ExecutionContext`。`waitUntil()` された
+   * Promise(Discord 通知の fire-and-forget 送信など)の完了を
+   * `waitOnExecutionContext` で待ちたいテストのために公開する。
+   * 一度もリクエストしていない場合は `undefined`。
+   */
+  lastExecutionContext(): ExecutionContext | undefined;
 }
 
 /**
@@ -40,6 +47,7 @@ export interface TestClient {
  */
 export function createTestClient(): TestClient {
   const jar = new Map<string, string>();
+  let lastCtx: ExecutionContext | undefined;
 
   function cookieHeader(): string | undefined {
     if (jar.size === 0) {
@@ -73,7 +81,12 @@ export function createTestClient(): TestClient {
     if (cookie) {
       headers.set("cookie", cookie);
     }
-    const response = await app.request(path, { ...init, headers }, env);
+    // 本物の Workers ランタイムと同様に `executionCtx` を渡す。渡さないと
+    // `c.executionCtx` が throw し、`waitUntil()` を使うフック(Discord 通知
+    // など)がテストから検証できない。
+    const ctx = createExecutionContext();
+    lastCtx = ctx;
+    const response = await app.request(path, { ...init, headers }, env, ctx);
     absorbSetCookies(response);
     return response;
   }
@@ -123,7 +136,18 @@ export function createTestClient(): TestClient {
     return request(path, { ...init, method: "POST", headers, body: finalBody });
   }
 
-  return { request, get, post, postAsBrowserForm, cookieHeader };
+  function lastExecutionContext(): ExecutionContext | undefined {
+    return lastCtx;
+  }
+
+  return {
+    request,
+    get,
+    post,
+    postAsBrowserForm,
+    cookieHeader,
+    lastExecutionContext,
+  };
 }
 
 function extractDataAttr(html: string, attr: string): string | null {
