@@ -69,6 +69,10 @@ export const participant = sqliteTable(
     recoveryKeyHash: text("recovery_key_hash").notNull(),
     discordUserId: text("discord_user_id"),
     createdAt: integer("created_at").notNull(),
+    // 参加取りやめ・主催者による削除の日時。物理削除はしない
+    // (song.proposedBy 等の他テーブルが restrict で参照しているため)。
+    // null なら現在も参加中。既存行には値がないため nullable。
+    leftAt: integer("left_at"),
   },
   (t) => [
     unique("participant_token_hash_unique").on(t.tokenHash),

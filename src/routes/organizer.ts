@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { countRecentFailures, recordFailure } from "../db/queries/auth-failures";
 import { updateEvent } from "../db/queries/events";
-import { listParticipants } from "../db/queries/participants";
+import { listParticipantsForExport } from "../db/queries/participants";
 import { loadEventTree } from "../db/queries/songs";
 import { sha256Hex, timingSafeEqual } from "../domain/crypto";
 import { normalizeAccessKey } from "../domain/ids";
+import { buildEventEditedContent } from "../domain/notify-event";
 import { buildPasteText } from "../domain/paste-text";
 import { canEditEvent } from "../domain/permissions";
 import { isRateLimited, RATE_LIMIT_WINDOW_SECONDS } from "../domain/rate-limit";
@@ -13,6 +14,7 @@ import { validateEventEditForm } from "../domain/validation";
 import type { AppEnv } from "../env";
 import { requireOrganizer, requireViewer } from "../middleware/guards";
 import { setSession } from "../middleware/session";
+import { scheduleNotification } from "../notify/schedule";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { OrganizerPage } from "../views/pages/organizer";
 import { OrganizerLoginPage } from "../views/pages/organizer-login";
@@ -191,7 +193,21 @@ organizerApp.post("/organizer/event", requireOrganizer, async (c) => {
 
   const db = c.get("db");
   const now = Math.floor(Date.now() / 1000);
+  // 通知の「変更前」は更新前にここで確定させる(event は更新前の値のまま)。
+  const before = {
+    title: event.title,
+    region: event.region,
+    startsAt: event.startsAt,
+    durationMinutes: event.durationMinutes,
+    place: event.place,
+    notes: event.notes ?? "",
+    status: event.status,
+  };
+  const after = result.value;
+
   await updateEvent(db, event.id, { ...result.value, updatedAt: now });
+
+  scheduleNotification(c, async () => buildEventEditedContent({ before, after }));
 
   return c.redirect(`/e/${event.slug}/organizer`, 303);
 });
@@ -202,12 +218,15 @@ organizerApp.get("/export.json", requireOrganizer, async (c) => {
     return notFoundResponse(c);
   }
   const db = c.get("db");
-  const participants = await listParticipants(db, event.id);
+  // 取りやめ・削除済みの参加者も `leftAt` 付きで含める(計画4-2)。
+  // 曲の `proposedBy` 等が参照しているため、バックアップとして参照先を
+  // 欠かさないための例外。
+  const participants = await listParticipantsForExport(db, event.id);
   const songs = await loadEventTree(db, event.id);
 
   // join_code と organizer_key_hash(合言葉・主催者キーのハッシュ)は含めない。
   // participants / songs はそれぞれ token_hash・recovery_key_hash を持たない
-  // 形で既に取得している(listParticipants / loadEventTree を参照)。
+  // 形で既に取得している(listParticipantsForExport / loadEventTree を参照)。
   const data = {
     event: {
       id: event.id,

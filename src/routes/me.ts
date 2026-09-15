@@ -1,25 +1,68 @@
 import { Hono } from "hono";
-import { findByDisplayName, updateProfile } from "../db/queries/participants";
-import { deriveMyAssignments, loadEventTree } from "../db/queries/songs";
+import type { Db } from "../db/client";
+import {
+  findByDisplayName,
+  updateProfile,
+  withdrawParticipant,
+} from "../db/queries/participants";
+import {
+  deriveMyAssignments,
+  loadEventTree,
+  type MyAssignmentItem,
+} from "../db/queries/songs";
 import { parseInstrumentsInput } from "../domain/instruments";
-import { canEditProfile } from "../domain/permissions";
+import { buildParticipantWithdrawnContent } from "../domain/notify-participant";
+import { canEditProfile, canWithdraw } from "../domain/permissions";
 import { validateParticipantForm } from "../domain/validation";
-import type { AppEnv } from "../env";
+import type { AppEnv, EventRow, Viewer } from "../env";
 import {
   requireOpenForParticipants,
   requireParticipant,
   requireViewer,
 } from "../middleware/guards";
 import { setSession } from "../middleware/session";
+import { scheduleNotification } from "../notify/schedule";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { MePage } from "../views/pages/me";
 import { SettingsPage } from "../views/pages/settings";
+import { WithdrawnPage } from "../views/pages/withdrawn";
 import { renderPage } from "../views/render";
 import { actorFromViewer } from "./actor";
 import { formString } from "./form";
 
 /** 自分のエントリー一覧(`/me`)と設定(`/settings`)。 */
 export const meApp = new Hono<AppEnv>({ strict: false });
+
+interface WithdrawCardProps {
+  isOrganizersOwnParticipant: boolean;
+  withdrawEntries: MyAssignmentItem[];
+}
+
+/**
+ * 設定画面の「参加を取りやめる」カードに必要な props をまとめて計算する。
+ * `/settings` の表示・`/settings/profile` の再表示(400・重複警告)の
+ * 3箇所すべてから使う(計画7章「既存の /settings/profile の 400
+ * 再表示なども props を満たすこと」)。
+ */
+async function loadWithdrawCardProps(
+  db: Db,
+  event: EventRow,
+  viewer: Viewer,
+): Promise<WithdrawCardProps> {
+  if (!viewer.participant) {
+    return { isOrganizersOwnParticipant: false, withdrawEntries: [] };
+  }
+  const isOrganizersOwnParticipant =
+    event.organizerParticipantId === viewer.participant.id;
+  if (isOrganizersOwnParticipant) {
+    return { isOrganizersOwnParticipant, withdrawEntries: [] };
+  }
+  const songs = await loadEventTree(db, event.id);
+  return {
+    isOrganizersOwnParticipant,
+    withdrawEntries: deriveMyAssignments(songs, viewer.participant.id),
+  };
+}
 
 meApp.get("/me", requireViewer, async (c) => {
   const event = c.get("event");
@@ -45,6 +88,8 @@ meApp.get("/settings", requireViewer, async (c) => {
   if (!event || !viewer) {
     return notFoundResponse(c);
   }
+  const db = c.get("db");
+  const withdrawCard = await loadWithdrawCardProps(db, event, viewer);
   return renderPage(
     c,
     SettingsPage({
@@ -55,6 +100,7 @@ meApp.get("/settings", requireViewer, async (c) => {
       errors: {},
       duplicateWarning: null,
       updated: c.req.query("updated") === "1",
+      ...withdrawCard,
     }),
   );
 });
@@ -82,6 +128,7 @@ meApp.post(
 
     const result = validateParticipantForm({ displayName: displayNameRaw });
     if (!result.ok) {
+      const withdrawCard = await loadWithdrawCardProps(db, event, viewer);
       return renderPage(
         c,
         SettingsPage({
@@ -92,6 +139,7 @@ meApp.post(
           errors: result.errors,
           duplicateWarning: null,
           updated: false,
+          ...withdrawCard,
         }),
         400,
       );
@@ -102,6 +150,7 @@ meApp.post(
     if (result.value.displayName !== viewer.participant.displayName) {
       const existing = await findByDisplayName(db, event.id, result.value.displayName);
       if (existing && !confirmed) {
+        const withdrawCard = await loadWithdrawCardProps(db, event, viewer);
         return renderPage(
           c,
           SettingsPage({
@@ -112,6 +161,7 @@ meApp.post(
             errors: {},
             duplicateWarning: `「${result.value.displayName}」という表示名は既に使われています。自分自身であれば、そのまま登録できます。`,
             updated: false,
+            ...withdrawCard,
           }),
         );
       }
@@ -138,3 +188,62 @@ meApp.post("/settings/unbind", requireViewer, requireParticipant, async (c) => {
   await setSession(c, event.slug, { e: event.id, p: null, o: false });
   return c.redirect(`/e/${event.slug}/`, 303);
 });
+
+meApp.post(
+  "/settings/withdraw",
+  requireViewer,
+  requireParticipant,
+  requireOpenForParticipants,
+  async (c) => {
+    const event = c.get("event");
+    const viewer = c.get("viewer");
+    if (!event || !viewer?.participant) {
+      return notFoundResponse(c);
+    }
+
+    const permission = canWithdraw(actorFromViewer(viewer), {
+      targetParticipantId: viewer.participant.id,
+      organizerParticipantId: event.organizerParticipantId,
+    });
+    if (!permission.ok) {
+      return errorResponse(c, 403, permission.message);
+    }
+
+    const db = c.get("db");
+    const participantId = viewer.participant.id;
+    const displayName = viewer.participant.displayName;
+    // 通知用に、更新前(エントリー削除前)にエントリー一覧を取っておく
+    // (計画5-1)。
+    const songs = await loadEventTree(db, event.id);
+    const entries = deriveMyAssignments(songs, participantId);
+
+    const now = Math.floor(Date.now() / 1000);
+    const withdrawn = await withdrawParticipant(db, {
+      eventId: event.id,
+      participantId,
+      now,
+    });
+
+    // 共同主催者の主催者フラグは残す。端末の紐付け解除(unbind)とは違い、
+    // 主催者権限は cookie 側の別の権限なので取りやめでは失わない(計画5-1)。
+    await setSession(c, event.slug, { e: event.id, p: null, o: viewer.isOrganizer });
+
+    // 更新件数が0(同時に二重送信された等で既に取りやめ済み)のときは
+    // 通知を出さない(計画4-1: 通知の二重送信を防ぐ歯止め)。
+    if (withdrawn) {
+      scheduleNotification(c, async () =>
+        buildParticipantWithdrawnContent({
+          eventTitle: event.title,
+          displayName,
+          entries: entries.map((entry) => ({
+            songTitle: entry.songTitle,
+            takeOrdinal: entry.takeOrdinal,
+            slotLabel: entry.slotLabel,
+          })),
+        }),
+      );
+    }
+
+    return renderPage(c, WithdrawnPage({ slug: event.slug }));
+  },
+);

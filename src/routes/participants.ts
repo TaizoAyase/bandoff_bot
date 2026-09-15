@@ -10,13 +10,15 @@ import {
   findByDisplayName,
   findParticipantById,
   listParticipants,
+  withdrawParticipant,
 } from "../db/queries/participants";
 import { deriveMyAssignments, loadEventTree } from "../db/queries/songs";
 import { sha256Hex } from "../domain/crypto";
 import { newAccessKey, newId, newToken, normalizeAccessKey } from "../domain/ids";
 import { parseInstrumentsInput } from "../domain/instruments";
+import { buildParticipantRegisteredContent } from "../domain/notify-participant";
 import { buildPasteText } from "../domain/paste-text";
-import { canLeaveAll } from "../domain/permissions";
+import { canLeaveAll, canRemoveParticipant } from "../domain/permissions";
 import { validateParticipantForm } from "../domain/validation";
 import type { AppEnv } from "../env";
 import {
@@ -26,6 +28,7 @@ import {
 } from "../middleware/guards";
 import { setSession } from "../middleware/session";
 import { notifyEntryChanged } from "../notify/entry-changed";
+import { scheduleNotification } from "../notify/schedule";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { ParticipantsPage, parseParticipantsNotice } from "../views/pages/participants";
 import { RegisterPage } from "../views/pages/register";
@@ -51,6 +54,7 @@ participantsApp.get("/participants", requireViewer, async (c) => {
   const participants = list.map((p) => ({
     ...p,
     entries: viewer.isOrganizer ? deriveMyAssignments(songs, p.id) : [],
+    isOrganizersOwnParticipant: p.id === event.organizerParticipantId,
   }));
   return renderPage(
     c,
@@ -102,6 +106,40 @@ participantsApp.post("/participants/:id/leave-all", requireOrganizer, async (c) 
   );
 
   return c.redirect(`/e/${event.slug}/participants?notice=left-all`, 303);
+});
+
+participantsApp.post("/participants/:id/remove", requireOrganizer, async (c) => {
+  const event = c.get("event");
+  const viewer = c.get("viewer");
+  if (!event || !viewer) {
+    return notFoundResponse(c);
+  }
+  const db = c.get("db");
+  const targetParticipantId = c.req.param("id");
+  // 取りやめ・削除済みの id も `findParticipantById` で除外され 404 になる
+  // (計画5-2「取りやめ済み → 404」)。
+  const target = await findParticipantById(db, targetParticipantId);
+  if (!target || target.eventId !== event.id) {
+    return notFoundResponse(c);
+  }
+
+  const permission = canRemoveParticipant(actorFromViewer(viewer), {
+    targetParticipantId,
+    organizerParticipantId: event.organizerParticipantId,
+  });
+  if (!permission.ok) {
+    return errorResponse(c, 403, permission.message);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  await withdrawParticipant(db, {
+    eventId: event.id,
+    participantId: targetParticipantId,
+    now,
+  });
+
+  // 主催者による削除は通知しない(公開チャンネルで角が立つため。計画6章)。
+  return c.redirect(`/e/${event.slug}/participants?notice=removed`, 303);
 });
 
 participantsApp.get(
@@ -210,6 +248,11 @@ participantsApp.post(
     });
 
     let entryResult: string | undefined;
+    let notifiedEntry: {
+      songTitle: string;
+      takeOrdinal: number | null;
+      slotLabel: string;
+    } | null = null;
     if (slot) {
       const context = await findSlotWithContext(db, slot);
       if (context && context.song.eventId === event.id) {
@@ -219,21 +262,28 @@ participantsApp.post(
           // UI(/me・参加者一覧)と表記を揃えるため、通知には採番済みラベル
           // (「Gt1」等)と Take の回数を使う(songs.ts の join/leave と同じ)。
           const labelInfo = await findSlotLabelInfo(db, context.song.id, slot);
-          notifyEntryChanged(c, [
-            {
-              type: "join",
-              eventTitle: event.title,
-              participantName: result.value.displayName,
-              songTitle: context.song.title,
-              slotLabel: labelInfo?.slotLabel ?? context.slot.instrument,
-              takeOrdinal: labelInfo?.takeOrdinal ?? null,
-            },
-          ]);
+          notifiedEntry = {
+            songTitle: context.song.title,
+            slotLabel: labelInfo?.slotLabel ?? context.slot.instrument,
+            takeOrdinal: labelInfo?.takeOrdinal ?? null,
+          };
         } else {
           entryResult = "先を越されました";
         }
       }
     }
+
+    // 登録のみ・登録+エントリー成功のどちらでも、このルートでは1通に
+    // まとめる(既存の join 通知をこのルートに限り置き換える。計画の
+    // ユーザー決定事項)。枠が見つからない・他イベント・先を越された場合は
+    // 登録のみの本文になる。
+    scheduleNotification(c, async () =>
+      buildParticipantRegisteredContent({
+        eventTitle: event.title,
+        displayName: result.value.displayName,
+        entry: notifiedEntry,
+      }),
+    );
 
     const origin = new URL(c.req.url).origin;
     const pasteText = buildPasteText(

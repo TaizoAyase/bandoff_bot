@@ -12,6 +12,8 @@ import {
   canJoinAs,
   canLeave,
   canLeaveAll,
+  canRemoveParticipant,
+  canWithdraw,
 } from "../../src/domain/permissions";
 
 // 仕様 4章(112〜124行目)の権限表をテーブル駆動で確認する。
@@ -272,5 +274,108 @@ describe("canEditProfile(自分のみ、主催者フラグでの代理は不可)
     },
   ])("actor=$actor target=$target -> $expected", ({ actor, target, expected }) => {
     expect(canEditProfile(actor, target).ok).toBe(expected);
+  });
+});
+
+// 2026-09-15 追加分: 参加の取りやめ・主催者による参加者の削除の権限表。
+describe("canWithdraw(参加の取りやめ、本人のみ・主催者本人は不可)", () => {
+  it.each([
+    {
+      label: "本人による取りやめ",
+      actor: { participantId: "p1", isOrganizer: false },
+      target: { targetParticipantId: "p1", organizerParticipantId: "org" },
+      expected: true,
+    },
+    {
+      label: "他人の participant は取りやめられない",
+      actor: { participantId: "p1", isOrganizer: false },
+      target: { targetParticipantId: "p2", organizerParticipantId: "org" },
+      expected: false,
+    },
+    {
+      label: "主催者フラグのみでは他人を取りやめられない",
+      actor: { participantId: null, isOrganizer: true },
+      target: { targetParticipantId: "p2", organizerParticipantId: "org" },
+      expected: false,
+    },
+    {
+      label: "主催者本人の Participant は本人であっても不可",
+      actor: { participantId: "org", isOrganizer: true },
+      target: { targetParticipantId: "org", organizerParticipantId: "org" },
+      expected: false,
+    },
+    {
+      label: "organizerParticipantId が null なら保護対象がない",
+      actor: { participantId: "p1", isOrganizer: false },
+      target: { targetParticipantId: "p1", organizerParticipantId: null },
+      expected: true,
+    },
+  ])("$label -> $expected", ({ actor, target, expected }) => {
+    expect(canWithdraw(actor, target).ok).toBe(expected);
+  });
+
+  it("主催者本人の取りやめを拒否するメッセージは日本語", () => {
+    const result = canWithdraw(
+      { participantId: "org", isOrganizer: true },
+      { targetParticipantId: "org", organizerParticipantId: "org" },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toBe("主催者は参加を取りやめられません");
+    }
+  });
+});
+
+describe("canRemoveParticipant(参加者の削除、主催者のみ・主催者本人は不可)", () => {
+  it.each([
+    {
+      label: "主催者による他人の削除",
+      actor: { participantId: "org", isOrganizer: true },
+      target: { targetParticipantId: "p1", organizerParticipantId: "org" },
+      expected: true,
+    },
+    {
+      label: "主催者フラグのみ(未登録)でも○",
+      actor: { participantId: null, isOrganizer: true },
+      target: { targetParticipantId: "p1", organizerParticipantId: "org" },
+      expected: true,
+    },
+    {
+      label: "参加者は他人を削除できない",
+      actor: { participantId: "p2", isOrganizer: false },
+      target: { targetParticipantId: "p1", organizerParticipantId: "org" },
+      expected: false,
+    },
+    {
+      label: "参加者は自分自身も削除できない(canWithdrawとは別の操作)",
+      actor: { participantId: "p1", isOrganizer: false },
+      target: { targetParticipantId: "p1", organizerParticipantId: "org" },
+      expected: false,
+    },
+    {
+      label: "主催者本人の Participant は共同主催者でも削除できない",
+      actor: { participantId: "p2", isOrganizer: true },
+      target: { targetParticipantId: "org", organizerParticipantId: "org" },
+      expected: false,
+    },
+    {
+      label: "organizerParticipantId が null なら保護対象がない",
+      actor: { participantId: "org", isOrganizer: true },
+      target: { targetParticipantId: "p1", organizerParticipantId: null },
+      expected: true,
+    },
+  ])("$label -> $expected", ({ actor, target, expected }) => {
+    expect(canRemoveParticipant(actor, target).ok).toBe(expected);
+  });
+
+  it("主催者本人を削除しようとしたときのメッセージは日本語", () => {
+    const result = canRemoveParticipant(
+      { participantId: "org", isOrganizer: true },
+      { targetParticipantId: "org", organizerParticipantId: "org" },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toBe("主催者本人は参加者から外せません");
+    }
   });
 });

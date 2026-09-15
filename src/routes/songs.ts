@@ -15,6 +15,7 @@ import {
   updateSong,
 } from "../db/queries/songs";
 import { DEFAULT_SLOTS } from "../domain/instruments";
+import { buildSongAddedContent, buildSongEditedContent } from "../domain/notify-song";
 import {
   canAddSong,
   canDeleteSong,
@@ -30,6 +31,7 @@ import {
   requireViewer,
 } from "../middleware/guards";
 import { notifyEntryChanged } from "../notify/entry-changed";
+import { scheduleNotification } from "../notify/schedule";
 import { ConfirmJoinPage } from "../views/pages/confirm";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { SongEditPage } from "../views/pages/song-edit";
@@ -135,6 +137,17 @@ songsApp.post(
       now,
     });
 
+    const actorDisplayName = viewer.participant.displayName;
+    scheduleNotification(c, async () =>
+      buildSongAddedContent({
+        eventTitle: event.title,
+        actorDisplayName,
+        title: formResult.value.title,
+        artist: formResult.value.artist,
+        instruments: slotsResult.value,
+      }),
+    );
+
     return c.redirect(`/e/${event.slug}/#song-${songId}`, 303);
   },
 );
@@ -207,7 +220,28 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
     );
   }
 
+  // 通知の「変更前」は更新前にここで確定させる。null と "" は同一視する
+  // (計画のユーザー決定事項)ため、DB の null をここで "" に正規化しておく。
+  const before = {
+    title: context.title,
+    artist: context.artist ?? "",
+    refUrl: context.refUrl ?? "",
+    songKey: context.songKey ?? "",
+    notes: context.notes ?? "",
+  };
+  const after = result.value;
+
   await updateSong(db, songId, result.value);
+
+  scheduleNotification(c, async () =>
+    buildSongEditedContent({
+      eventTitle: event.title,
+      actorDisplayName: viewer.participant?.displayName ?? null,
+      before,
+      after,
+    }),
+  );
+
   return c.redirect(`/e/${event.slug}/#song-${songId}`, 303);
 });
 

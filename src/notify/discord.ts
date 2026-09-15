@@ -23,6 +23,10 @@ const CHANNEL_ID_PATTERN = /^\d{1,20}$/;
  * 入力できるため、これが無いと `@everyone` 等のメンションが実際に発火し、
  * サーバー全体への一斉通知を撃たれてしまう。
  *
+ * `flags: 4`(`SUPPRESS_EMBEDS`)も必須。場所・曲名などに URL が入ると
+ * Discord がリンクプレビューを展開しようとし、Discord のプロキシがその
+ * URL を取得しにいく(仕様2.2で OGP を出さないのと同じ理由の、通知本文側)。
+ *
  * 通知の失敗でユーザーのエントリー操作を巻き込んで 500 にしてはいけないため、
  * 非 2xx・例外のどちらも投げずに `console.warn` へ握りつぶす。
  * `botToken`(Bot として投稿する資格情報)・`channelId`・`content`(参加者の
@@ -46,9 +50,13 @@ export async function postChannelMessage(
         headers: {
           authorization: `Bot ${botToken}`,
           "content-type": "application/json",
-          "user-agent": "DiscordBot (bandoff, 0.1.0)",
+          "user-agent": "DiscordBot (bandoff, 0.2.0)",
         },
-        body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+        body: JSON.stringify({
+          content,
+          allowed_mentions: { parse: [] },
+          flags: 4,
+        }),
         signal: AbortSignal.timeout(BOT_REQUEST_TIMEOUT_MS),
       },
     );

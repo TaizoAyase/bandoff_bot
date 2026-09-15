@@ -3,7 +3,14 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../../src/db/client";
 import { event as eventTable, participant } from "../../src/db/schema";
-import { closeEvent, createEvent, joinAsViewer, registerParticipant } from "../helpers";
+import {
+  closeEvent,
+  createEvent,
+  createSong,
+  findFirstSongSlotIds,
+  joinAsViewer,
+  registerParticipant,
+} from "../helpers";
 
 describe("GET /e/:slug/settings", () => {
   it("shows a registration prompt for an unregistered viewer", async () => {
@@ -29,6 +36,41 @@ describe("GET /e/:slug/settings", () => {
     expect(html).toContain('value="山田"');
     expect(html).toContain("紐付けを解除する");
     expect(html).toContain('data-copy-target="recovery-key-display"');
+  });
+
+  it("shows the withdraw button and its data-confirm for a participant with no entries", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, { displayName: "山田" });
+
+    const response = await client.get(`/e/${created.slug}/settings`);
+    const html = await response.text();
+    expect(html).toContain(`action="/e/${created.slug}/settings/withdraw"`);
+    expect(html).toContain("参加を取りやめる");
+    expect(html).toContain('data-confirm="参加を取りやめます"');
+  });
+
+  it("includes the entries in the withdraw confirm when the participant has any", async () => {
+    const created = await createEvent();
+    await createSong(created.client, created.slug, { title: "設定画面確認曲" });
+    const slotId = (await findFirstSongSlotIds(created.slug))[0];
+    if (!slotId) throw new Error("expected a slot");
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, { displayName: "山田" });
+    await client.post(`/e/${created.slug}/slots/${slotId}/join`);
+
+    const response = await client.get(`/e/${created.slug}/settings`);
+    const html = await response.text();
+    expect(html).toContain("設定画面確認曲");
+    expect(html).toContain("も辞退します");
+  });
+
+  it("shows the protected message instead of a withdraw button for the organizer", async () => {
+    const created = await createEvent();
+    const response = await created.client.get(`/e/${created.slug}/settings`);
+    const html = await response.text();
+    expect(html).toContain("主催者は参加を取りやめられません");
+    expect(html).not.toContain(`action="/e/${created.slug}/settings/withdraw"`);
   });
 });
 

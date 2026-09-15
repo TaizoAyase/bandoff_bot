@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { createEvent } from "../db/queries/events";
+import { countEventsCreatedSince, createEvent } from "../db/queries/events";
 import { DEFAULT_WORKSPACE_ID } from "../domain/constants";
 import { sha256Hex } from "../domain/crypto";
 import {
@@ -10,10 +10,16 @@ import {
   normalizeAccessKey,
 } from "../domain/ids";
 import { parseInstrumentsInput } from "../domain/instruments";
+import { buildNewEventContent } from "../domain/notify-event";
 import { buildPasteText } from "../domain/paste-text";
+import {
+  isNewEventNotifyRateLimited,
+  NEW_EVENT_NOTIFY_WINDOW_SECONDS,
+} from "../domain/rate-limit";
 import { validateNewEventForm } from "../domain/validation";
 import type { AppEnv } from "../env";
 import { setSession } from "../middleware/session";
+import { scheduleNotification } from "../notify/schedule";
 import { emptyNewEventFormValues, NewEventPage } from "../views/pages/new-event";
 import { WelcomePage } from "../views/pages/welcome";
 import { renderPage } from "../views/render";
@@ -88,6 +94,25 @@ rootApp.post("/new", async (c) => {
     organizerTokenHash: tokenHash,
     organizerRecoveryKeyHash: recoveryKeyHash,
     now,
+  });
+
+  // 荒らし対策として、直近1時間にサイト全体で作られたイベントが上限を
+  // 超えたら通知だけを省く(イベント作成自体は常に成功させる、計画3章)。
+  scheduleNotification(c, async () => {
+    const since = now - NEW_EVENT_NOTIFY_WINDOW_SECONDS;
+    const recentCount = await countEventsCreatedSince(db, since);
+    if (isNewEventNotifyRateLimited(recentCount)) {
+      console.warn("discord notify skipped", { reason: "new event rate limit" });
+      return null;
+    }
+    return buildNewEventContent({
+      title: result.value.title,
+      organizerDisplayName: result.value.organizerDisplayName,
+      region: result.value.region,
+      startsAt: result.value.startsAt,
+      durationMinutes: result.value.durationMinutes,
+      place: result.value.place,
+    });
   });
 
   await setSession(c, slug, {

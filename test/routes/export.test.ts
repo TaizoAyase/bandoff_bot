@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createEvent, createSong, joinAsViewer, registerParticipant } from "../helpers";
+import {
+  createEvent,
+  createSong,
+  findFirstSongSlotIds,
+  joinAsViewer,
+  registerParticipant,
+} from "../helpers";
 
 describe("GET /e/:slug/export.json", () => {
   it("returns 200 with attachment headers for the organizer", async () => {
@@ -70,5 +76,28 @@ describe("GET /e/:slug/export.json", () => {
       event: { durationMinutes: number | null };
     };
     expect(data.event.durationMinutes).toBe(180);
+  });
+
+  it("includes withdrawn participants with a populated leftAt", async () => {
+    const created = await createEvent();
+    await createSong(created.client, created.slug, { title: "エクスポート取りやめ曲" });
+    const slotId = (await findFirstSongSlotIds(created.slug))[0];
+    if (!slotId) throw new Error("expected a slot");
+
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, { displayName: "取りやめ太郎" });
+    await client.post(`/e/${created.slug}/slots/${slotId}/join`);
+    await client.post(`/e/${created.slug}/settings/withdraw`);
+
+    const response = await created.client.get(`/e/${created.slug}/export.json`);
+    const data = (await response.json()) as {
+      participants: { displayName: string; leftAt: number | null }[];
+    };
+    const withdrawn = data.participants.find((p) => p.displayName === "取りやめ太郎");
+    expect(withdrawn).toBeDefined();
+    expect(withdrawn?.leftAt).not.toBeNull();
+
+    const active = data.participants.find((p) => p.displayName === "主催者");
+    expect(active?.leftAt).toBeNull();
   });
 });

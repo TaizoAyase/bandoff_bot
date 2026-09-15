@@ -1,4 +1,4 @@
-import { createExecutionContext, env } from "cloudflare:test";
+import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { asc, eq } from "drizzle-orm";
 import { createDb } from "../src/db/client";
 import { event as eventTable, slot, song, take } from "../src/db/schema";
@@ -88,6 +88,12 @@ export function createTestClient(): TestClient {
     lastCtx = ctx;
     const response = await app.request(path, { ...init, headers }, env, ctx);
     absorbSetCookies(response);
+    // `waitUntil()` された Promise(Discord 通知の fire-and-forget 送信など)
+    // をここで待ち切っておく。呼び出し側が明示的に `flushNotifications`
+    // 相当を呼ばなくても、次のリクエストを送る時点で前のリクエストの通知が
+    // 必ず完了済みになる(未完了なら 0 件、というテストの取りこぼしを防ぐ)。
+    // 保留中の Promise が無ければ安価な no-op。
+    await waitOnExecutionContext(ctx);
     return response;
   }
 

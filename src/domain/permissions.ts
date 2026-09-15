@@ -193,3 +193,57 @@ export function canEditProfile(
   }
   return { ok: false, message: "自分のプロフィールのみ編集できます" };
 }
+
+export interface ParticipantProtection {
+  /** 取りやめ・削除の対象にしようとしている participant の id。 */
+  targetParticipantId: string;
+  /** 対象イベントの主催者本人の participant id(仕様上 null もあり得る)。 */
+  organizerParticipantId: string | null;
+}
+
+/**
+ * 主催者本人の Participant を保護対象として扱う(仕様3章「主催者は
+ * 必ず参加者を兼ねる」)。`organizerParticipantId` が null(スキーマ上は
+ * 許容)のイベントには保護対象がない。
+ */
+function isOrganizersOwnParticipant(target: ParticipantProtection): boolean {
+  return (
+    target.organizerParticipantId !== null &&
+    target.targetParticipantId === target.organizerParticipantId
+  );
+}
+
+/**
+ * 参加の取りやめ(本人)。自分の Participant のみ可。主催者本人の
+ * Participant は本人であっても取りやめられない(計画3章)。
+ */
+export function canWithdraw(
+  actor: Actor,
+  target: ParticipantProtection,
+): PermissionResult {
+  if (isOrganizersOwnParticipant(target)) {
+    return { ok: false, message: "主催者は参加を取りやめられません" };
+  }
+  if (actor.participantId && actor.participantId === target.targetParticipantId) {
+    return OK;
+  }
+  return { ok: false, message: "自分の参加のみ取りやめられます" };
+}
+
+/**
+ * 主催者による参加者の削除。主催者本人の Participant は削除できない
+ * (計画3章)。主催者キーを共有された共同主催者が自分自身の Participant を
+ * 外すのは可(その participant が `organizerParticipantId` と一致しない限り)。
+ */
+export function canRemoveParticipant(
+  actor: Actor,
+  target: ParticipantProtection,
+): PermissionResult {
+  if (isOrganizersOwnParticipant(target)) {
+    return { ok: false, message: "主催者本人は参加者から外せません" };
+  }
+  if (actor.isOrganizer) {
+    return OK;
+  }
+  return { ok: false, message: "主催者のみ参加者を削除できます" };
+}
