@@ -28,3 +28,20 @@ export function isRateLimited(counts: RecentFailureCounts): boolean {
     counts.eventFailures >= EVENT_FAILURE_LIMIT || counts.ipFailures >= IP_FAILURE_LIMIT
   );
 }
+
+/** 新規イベント通知のレート制限の判定窓(秒)。直近1時間。 */
+export const NEW_EVENT_NOTIFY_WINDOW_SECONDS = 60 * 60;
+
+/**
+ * 窓内でサイト全体に許容する新規イベント通知の件数(荒らし対策)。
+ * イベントの作成自体はこの上限に関わらず常に成功させ、通知だけを省く。
+ */
+export const NEW_EVENT_NOTIFY_LIMIT_PER_HOUR = 3;
+
+/**
+ * 直近の窓内に(サイト全体で)作られたイベント数が上限を超えているかを
+ * 判定する。今作ったイベント自身も件数に含めた上で呼び出すこと。
+ */
+export function isNewEventNotifyRateLimited(recentEventCount: number): boolean {
+  return recentEventCount > NEW_EVENT_NOTIFY_LIMIT_PER_HOUR;
+}

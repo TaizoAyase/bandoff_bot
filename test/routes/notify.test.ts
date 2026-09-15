@@ -1,17 +1,18 @@
-import { env, waitOnExecutionContext } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import { and, asc, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { createDb } from "../../src/db/client";
 import { event as eventTable, participant, slot, take } from "../../src/db/schema";
 import {
   createEvent,
+  createSlot,
   createSong,
   createTake,
   extractSongId,
+  findFirstSongAndTakeId,
   findFirstSongSlotIds,
   joinAsViewer,
   registerParticipant,
-  type TestClient,
 } from "../helpers";
 
 /**
@@ -56,17 +57,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** 直近のリクエストの `waitUntil()` された Promise の完了を待つ。 */
-async function flushNotifications(client: TestClient): Promise<void> {
-  const ctx = client.lastExecutionContext();
-  if (!ctx) throw new Error("no ExecutionContext recorded yet");
-  await waitOnExecutionContext(ctx);
-}
-
-function lastRequestBody(): { content: string; allowed_mentions: unknown } {
+function lastRequestBody(): {
+  content: string;
+  allowed_mentions: unknown;
+  flags: unknown;
+} {
   const request = capturedRequests.at(-1);
   if (!request) throw new Error("fetch was not called");
-  return JSON.parse(request.body) as { content: string; allowed_mentions: unknown };
+  return JSON.parse(request.body) as {
+    content: string;
+    allowed_mentions: unknown;
+    flags: unknown;
+  };
 }
 
 /** Discord 通知本文から `(n回目)` の n を取り出す。無ければ null。 */
@@ -89,6 +91,11 @@ async function setupEventWithSong() {
   const created = await createEvent({ title: "テストオフ会" });
   await createSong(created.client, created.slug, { title: "テスト曲" });
   const slotIds = await findFirstSongSlotIds(created.slug);
+  // イベント作成(新規イベント)・曲追加の通知はここまでの `it` の対象外。
+  // `request()` が各リクエストの `waitUntil` を待ち切ってから返るため、
+  // ここに到達した時点でどちらの通知も送信済み(または no-op 判定済み)になっている。
+  capturedRequests = [];
+  fetchSpy.mockClear();
   return { ...created, slotIds };
 }
 
@@ -185,12 +192,14 @@ describe("Discord Bot 通知: エントリー(POST /e/:slug/slots/:id/join)", ()
     const setup = await setupEventWithSong();
     const client = await joinAsViewer(setup.slug, setup.joinCode);
     await registerParticipant(client, setup.slug, { displayName: "鈴木" });
+    // 参加登録のみの通知(N7)はここまでの `it` の対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
 
     const slotId = setup.slotIds[0];
     if (!slotId) throw new Error("expected a slot");
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(capturedRequests[0]?.url).toBe(EXPECTED_URL);
@@ -208,11 +217,13 @@ describe("Discord Bot 通知: エントリー(POST /e/:slug/slots/:id/join)", ()
     const setup = await setupEventWithSong();
     const client = await joinAsViewer(setup.slug, setup.joinCode);
     await registerParticipant(client, setup.slug, { displayName: "鈴木" });
+    // 参加登録のみの通知(N7)はここまでの `it` の対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
 
     const slotId = setup.slotIds[0];
     if (!slotId) throw new Error("expected a slot");
     await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
-    await flushNotifications(client);
 
     const request = capturedRequests.at(-1);
     if (!request) throw new Error("fetch was not called");
@@ -224,15 +235,17 @@ describe("Discord Bot 通知: エントリー(POST /e/:slug/slots/:id/join)", ()
     expect(request.url).not.toContain(BOT_TOKEN);
   });
 
-  it("body に allowed_mentions: { parse: [] } が含まれる(メンション無効化)", async () => {
+  it("body に allowed_mentions: { parse: [] } と flags: 4 が含まれる(メンション無効化・埋め込み抑止)", async () => {
     const setup = await setupEventWithSong();
     const client = await joinAsViewer(setup.slug, setup.joinCode);
     await registerParticipant(client, setup.slug, { displayName: "@everyone" });
+    // 参加登録のみの通知(N7)はここまでの `it` の対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
 
     const slotId = setup.slotIds[0];
     if (!slotId) throw new Error("expected a slot");
     await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
-    await flushNotifications(client);
 
     const body = lastRequestBody();
     expect(body.allowed_mentions).toEqual({ parse: [] });
@@ -240,17 +253,22 @@ describe("Discord Bot 通知: エントリー(POST /e/:slug/slots/:id/join)", ()
     // ことを保証するのは `allowed_mentions: { parse: [] }`(上のアサーション)
     // であって、本文側のエスケープ対象は Markdown 記号のみ。
     expect(body.content).toContain("@everyone");
+    // 場所・曲名などに URL が含まれていてもリンクプレビューを展開させない
+    // ため、SUPPRESS_EMBEDS(1 << 2 = 4)を常に立てる。
+    expect(body.flags).toBe(4);
   });
 
   it("body にも URL にも slug が含まれない", async () => {
     const setup = await setupEventWithSong();
     const client = await joinAsViewer(setup.slug, setup.joinCode);
     await registerParticipant(client, setup.slug, { displayName: "鈴木" });
+    // 参加登録のみの通知(N7)はここまでの `it` の対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
 
     const slotId = setup.slotIds[0];
     if (!slotId) throw new Error("expected a slot");
     await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
-    await flushNotifications(client);
 
     expect(capturedRequests[0]?.url).not.toContain(setup.slug);
     const body = lastRequestBody();
@@ -267,14 +285,12 @@ describe("Discord Bot 通知: 辞退(POST /e/:slug/slots/:id/leave)", () => {
     const slotId = setup.slotIds[0];
     if (!slotId) throw new Error("expected a slot");
     await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
-    await flushNotifications(client);
     // ここまでの join 通知はこのテストの対象外。
     capturedRequests = [];
     fetchSpy.mockClear();
 
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/leave`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const body = lastRequestBody();
@@ -298,22 +314,21 @@ describe("Discord Bot 通知: Take が複数あるときの表記(/me 一覧と�
     const take1Slot = take1SlotIds[0];
     if (!take1Slot) throw new Error("expected a slot");
     await client.post(`/e/${created.slug}/slots/${take1Slot}/join`);
-    await flushNotifications(client);
     const take1Body = lastRequestBody();
     // Take が1件だけのときは deriveMyAssignments と同じく回数を出さない。
     expect(take1Body.content).not.toContain("回目");
     expect(take1Body.content).toContain("Gt1");
 
+    await createTake(client, created.slug, songId);
+    // Take 追加の通知(N5)はここまでの `it` の対象外。
     capturedRequests = [];
     fetchSpy.mockClear();
 
-    await createTake(client, created.slug, songId);
     const take2SlotIds = await takeSlotIdsByOrder(songId, 1);
     const take2Slot = take2SlotIds[0];
     if (!take2Slot) throw new Error("expected a slot");
     const response = await client.post(`/e/${created.slug}/slots/${take2Slot}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const take2Body = lastRequestBody();
@@ -352,7 +367,6 @@ describe("Discord Bot 通知: Take が複数あるときの表記(/me 一覧と�
     if (!take1Slot) throw new Error("expected a slot");
     const response = await client.post(`/e/${created.slug}/slots/${take1Slot}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     const body = lastRequestBody();
     const meResponse = await client.get(`/e/${created.slug}/me`);
@@ -394,7 +408,6 @@ describe("Discord Bot 通知: Take が複数あるときの表記(/me 一覧と�
     if (!take3Slot) throw new Error("expected a slot");
     const response = await client.post(`/e/${created.slug}/slots/${take3Slot}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     const body = lastRequestBody();
     const meResponse = await client.get(`/e/${created.slug}/me`);
@@ -416,7 +429,6 @@ describe("Discord Bot 通知: 主催者による一括辞退(POST /e/:slug/parti
       `/e/${setup.slug}/participants/${setup.participantId}/leave-all`,
     );
     expect(response.status).toBe(303);
-    await flushNotifications(setup.client);
 
     // Discord のレート制限(おおよそ 5 リクエスト / 2 秒)に当たらないよう、
     // 1曲ずつではなくまとめて1通で送る(計画参照)。
@@ -426,6 +438,305 @@ describe("Discord Bot 通知: 主催者による一括辞退(POST /e/:slug/parti
     expect(body.content).toContain("曲B");
     expect(body.content).toContain("曲C");
     expect(body.content).toContain("山田");
+  });
+});
+
+describe("Discord Bot 通知: イベント情報の編集(POST /e/:slug/organizer/event)", () => {
+  it("変わった項目だけが差分行になる", async () => {
+    const created = await createEvent({
+      title: "変更前タイトル",
+      region: "東京",
+      place: "スタジオA",
+    });
+    // イベント作成(N1)の通知はこのテストの対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "変更後タイトル",
+      region: "大阪",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
+      durationMinutes: "",
+      place: "スタジオA",
+      notes: "",
+      status: "upcoming",
+    });
+    expect(response.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      [
+        "〔変更後タイトル〕イベント情報が変更されました",
+        "- イベント名: 変更前タイトル → 変更後タイトル",
+        "- 地域: 東京 → 大阪",
+      ].join("\n"),
+    );
+  });
+
+  it("何も変わっていなければ通知は送られない", async () => {
+    const created = await createEvent({
+      title: "同じタイトル",
+      region: "東京",
+      place: "スタジオA",
+    });
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "同じタイトル",
+      region: "東京",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
+      durationMinutes: "",
+      place: "スタジオA",
+      notes: "",
+      status: "upcoming",
+    });
+    expect(response.status).toBe(303);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("募集状況の変更は主催者画面の選択肢に合わせたラベルになる", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "テストオフ会",
+      region: "東京",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
+      durationMinutes: "",
+      place: "スタジオA",
+      notes: "",
+      status: "closed",
+    });
+    expect(response.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toContain("- 募集状況: 募集中 → 締切");
+  });
+});
+
+describe("Discord Bot 通知: 曲の追加(POST /e/:slug/songs)", () => {
+  it("本文にアーティスト・採番済みパートが入る", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    // イベント作成(N1)の通知はこのテストの対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const response = await createSong(created.client, created.slug, {
+      title: "新曲",
+      artist: "テストアーティスト",
+      instruments: ["Gt", "Gt", "Ba"],
+    });
+    expect(response.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      [
+        "〔テストオフ会〕主催者さんが「新曲」を追加しました",
+        "- アーティスト: テストアーティスト",
+        "- パート: Gt1、Gt2、Ba",
+      ].join("\n"),
+    );
+  });
+
+  it("アーティストが空ならその行が本文に出ない", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    await createSong(created.client, created.slug, { title: "新曲", artist: "" });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).not.toContain("アーティスト");
+  });
+});
+
+describe("Discord Bot 通知: 曲情報の編集(POST /e/:slug/songs/:id)", () => {
+  it("変わった項目だけが差分行になる", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "旧曲名",
+      artist: "旧アーティスト",
+      songKey: "C",
+    });
+    const songId = extractSongId(songResponse);
+    // イベント作成(N1)・曲追加(N3)の通知はこのテストの対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const editResponse = await created.client.post(
+      `/e/${created.slug}/songs/${songId}`,
+      {
+        title: "新曲名",
+        artist: "旧アーティスト",
+        refUrl: "",
+        songKey: "D",
+        notes: "",
+      },
+    );
+    expect(editResponse.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      [
+        "〔テストオフ会〕主催者さんが「旧曲名」の曲情報を変更しました",
+        "- 曲名: 旧曲名 → 新曲名",
+        "- キー: C → D",
+      ].join("\n"),
+    );
+  });
+
+  it("何も変わっていなければ通知は送られない", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "曲",
+    });
+    const songId = extractSongId(songResponse);
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const editResponse = await created.client.post(
+      `/e/${created.slug}/songs/${songId}`,
+      { title: "曲", artist: "", refUrl: "", songKey: "", notes: "" },
+    );
+    expect(editResponse.status).toBe(303);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("Discord Bot 通知: 2回目以降の Take 追加(POST /e/:slug/songs/:id/takes)", () => {
+  it("追加後の順位が本文に入る", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "テスト曲",
+    });
+    const songId = extractSongId(songResponse);
+    // イベント作成(N1)・曲追加(N3)の通知はこのテストの対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const response = await createTake(created.client, created.slug, songId);
+    expect(response.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      "〔テストオフ会〕主催者さんが「テスト曲」の2回目を追加しました",
+    );
+  });
+});
+
+describe("Discord Bot 通知: 枠の追加(POST /e/:slug/takes/:id/slots)", () => {
+  it("採番済みラベル・メモが本文に入る", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    await createSong(created.client, created.slug, {
+      title: "テスト曲",
+      instruments: ["Gt"],
+    });
+    const { takeId } = await findFirstSongAndTakeId(created.slug);
+    // イベント作成(N1)・曲追加(N3)の通知はこのテストの対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const response = await createSlot(created.client, created.slug, takeId, {
+      instrument: "Gt",
+      note: "5弦ベースで",
+    });
+    expect(response.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      [
+        "〔テストオフ会〕主催者さんが「テスト曲」に Gt2 の枠を追加しました",
+        "- メモ: 5弦ベースで",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("Discord Bot 通知: 参加者登録のみ(POST /e/:slug/participants)", () => {
+  it("枠指定なしで登録すると「参加登録しました」になる", async () => {
+    const setup = await setupEventWithSong();
+    const client = await joinAsViewer(setup.slug, setup.joinCode);
+
+    const { response } = await registerParticipant(client, setup.slug, {
+      displayName: "鈴木",
+    });
+    expect(response.status).toBe(200);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe("〔テストオフ会〕鈴木さんが参加登録しました");
+  });
+
+  it("存在しない枠 id を指定しても登録のみの本文になる", async () => {
+    const setup = await setupEventWithSong();
+    const client = await joinAsViewer(setup.slug, setup.joinCode);
+
+    await registerParticipant(client, setup.slug, {
+      displayName: "鈴木",
+      slot: "does-not-exist",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe("〔テストオフ会〕鈴木さんが参加登録しました");
+  });
+
+  it("先を越された場合も登録のみの本文になる(エントリー内容は出ない)", async () => {
+    const setup = await setupEventWithSong();
+    const slotId = setup.slotIds[0];
+    if (!slotId) throw new Error("expected a slot");
+
+    const firstClient = await joinAsViewer(setup.slug, setup.joinCode);
+    await registerParticipant(firstClient, setup.slug, {
+      displayName: "先着",
+      slot: slotId,
+    });
+    // 先着の登録+エントリー通知はこのテストの対象外。
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const client = await joinAsViewer(setup.slug, setup.joinCode);
+    await registerParticipant(client, setup.slug, {
+      displayName: "鈴木",
+      slot: slotId,
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe("〔テストオフ会〕鈴木さんが参加登録しました");
+  });
+});
+
+describe("Discord Bot 通知: 登録+エントリー成功(POST /e/:slug/participants)", () => {
+  it("既存の join 通知を置き換えて1通にまとまる(N8)", async () => {
+    const setup = await setupEventWithSong();
+    const slotId = setup.slotIds[0];
+    if (!slotId) throw new Error("expected a slot");
+    const client = await joinAsViewer(setup.slug, setup.joinCode);
+
+    const { response } = await registerParticipant(client, setup.slug, {
+      displayName: "鈴木",
+      slot: slotId,
+    });
+    expect(response.status).toBe(200);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      "〔テストオフ会〕鈴木さんが参加登録し、「テスト曲」の Gt1 に入りました",
+    );
   });
 });
 
@@ -441,7 +752,6 @@ describe("Discord Bot 通知: 未設定時は no-op", () => {
     if (!slotId) throw new Error("expected a slot");
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -456,7 +766,6 @@ describe("Discord Bot 通知: 未設定時は no-op", () => {
     if (!slotId) throw new Error("expected a slot");
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -471,7 +780,6 @@ describe("Discord Bot 通知: 未設定時は no-op", () => {
     if (!slotId) throw new Error("expected a slot");
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -490,7 +798,6 @@ describe("Discord Bot 通知: 不正なチャンネル ID なら送信しない"
     if (!slotId) throw new Error("expected a slot");
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -507,7 +814,6 @@ describe("Discord Bot 通知: 送信の失敗を握りつぶす", () => {
     if (!slotId) throw new Error("expected a slot");
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
   });
 
   it("fetch が reject してもエントリー操作は 303 のまま成功する", async () => {
@@ -520,6 +826,5 @@ describe("Discord Bot 通知: 送信の失敗を握りつぶす", () => {
     if (!slotId) throw new Error("expected a slot");
     const response = await client.post(`/e/${setup.slug}/slots/${slotId}/join`);
     expect(response.status).toBe(303);
-    await flushNotifications(client);
   });
 });

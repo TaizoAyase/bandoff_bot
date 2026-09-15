@@ -1,5 +1,9 @@
 import { Hono } from "hono";
-import { deleteSlot, findSlotWithContext } from "../db/queries/assignments";
+import {
+  deleteSlot,
+  findSlotLabelInfo,
+  findSlotWithContext,
+} from "../db/queries/assignments";
 import {
   countSlots,
   countTakes,
@@ -7,8 +11,11 @@ import {
   createTakeFromFirst,
   deleteTake,
   findSongContext,
+  findTakeOrdinal,
   findTakeWithContext,
 } from "../db/queries/songs";
+import { buildSlotAddedContent } from "../domain/notify-slot";
+import { buildTakeAddedContent } from "../domain/notify-song";
 import {
   canAddSlot,
   canAddTake,
@@ -22,6 +29,7 @@ import {
   requireParticipant,
   requireViewer,
 } from "../middleware/guards";
+import { scheduleNotification } from "../notify/schedule";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { emptySlotFormValues, SlotFormPage } from "../views/pages/slot-form";
 import { renderPage } from "../views/render";
@@ -67,6 +75,22 @@ takesApp.post(
     if (!result) {
       return notFoundResponse(c);
     }
+
+    const actorDisplayName = viewer.participant.displayName;
+    scheduleNotification(c, async () => {
+      // 追加前の件数 + 1 は同時操作でずれるため使わず、DB から追加後の
+      // 実際の順位を取り直す(計画参照)。
+      const ordinal = await findTakeOrdinal(db, songId, result.takeId);
+      if (ordinal === null) {
+        return null;
+      }
+      return buildTakeAddedContent({
+        eventTitle: event.title,
+        actorDisplayName,
+        songTitle: songContext.title,
+        takeOrdinal: ordinal,
+      });
+    });
 
     return c.redirect(`/e/${event.slug}/#song-${songId}`, 303);
   },
@@ -190,12 +214,31 @@ takesApp.post(
     }
 
     const now = Math.floor(Date.now() / 1000);
-    await createSlot(db, {
+    const { slotId } = await createSlot(db, {
       takeId,
       instrument: result.value.instrument,
       note: result.value.note,
       createdBy: viewer.participant.id,
       now,
+    });
+
+    const actorDisplayName = viewer.participant.displayName;
+    const note = result.value.note;
+    scheduleNotification(c, async () => {
+      // 同じ楽器が増えると Gt → Gt1/Gt2 に振り直されるため、追加後に
+      // 実際のラベル・回数を求め直す(既存の join/leave 通知と同じ)。
+      const labelInfo = await findSlotLabelInfo(db, context.songId, slotId);
+      if (!labelInfo) {
+        return null;
+      }
+      return buildSlotAddedContent({
+        eventTitle: event.title,
+        actorDisplayName,
+        songTitle: context.song.title,
+        takeOrdinal: labelInfo.takeOrdinal,
+        slotLabel: labelInfo.slotLabel,
+        note,
+      });
     });
 
     return c.redirect(`/e/${event.slug}/#song-${context.song.id}`, 303);

@@ -15,6 +15,7 @@ import { deriveMyAssignments, loadEventTree } from "../db/queries/songs";
 import { sha256Hex } from "../domain/crypto";
 import { newAccessKey, newId, newToken, normalizeAccessKey } from "../domain/ids";
 import { parseInstrumentsInput } from "../domain/instruments";
+import { buildParticipantRegisteredContent } from "../domain/notify-participant";
 import { buildPasteText } from "../domain/paste-text";
 import { canLeaveAll } from "../domain/permissions";
 import { validateParticipantForm } from "../domain/validation";
@@ -26,6 +27,7 @@ import {
 } from "../middleware/guards";
 import { setSession } from "../middleware/session";
 import { notifyEntryChanged } from "../notify/entry-changed";
+import { scheduleNotification } from "../notify/schedule";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { ParticipantsPage, parseParticipantsNotice } from "../views/pages/participants";
 import { RegisterPage } from "../views/pages/register";
@@ -210,6 +212,11 @@ participantsApp.post(
     });
 
     let entryResult: string | undefined;
+    let notifiedEntry: {
+      songTitle: string;
+      takeOrdinal: number | null;
+      slotLabel: string;
+    } | null = null;
     if (slot) {
       const context = await findSlotWithContext(db, slot);
       if (context && context.song.eventId === event.id) {
@@ -219,21 +226,28 @@ participantsApp.post(
           // UI(/me・参加者一覧)と表記を揃えるため、通知には採番済みラベル
           // (「Gt1」等)と Take の回数を使う(songs.ts の join/leave と同じ)。
           const labelInfo = await findSlotLabelInfo(db, context.song.id, slot);
-          notifyEntryChanged(c, [
-            {
-              type: "join",
-              eventTitle: event.title,
-              participantName: result.value.displayName,
-              songTitle: context.song.title,
-              slotLabel: labelInfo?.slotLabel ?? context.slot.instrument,
-              takeOrdinal: labelInfo?.takeOrdinal ?? null,
-            },
-          ]);
+          notifiedEntry = {
+            songTitle: context.song.title,
+            slotLabel: labelInfo?.slotLabel ?? context.slot.instrument,
+            takeOrdinal: labelInfo?.takeOrdinal ?? null,
+          };
         } else {
           entryResult = "先を越されました";
         }
       }
     }
+
+    // 登録のみ・登録+エントリー成功のどちらでも、このルートでは1通に
+    // まとめる(既存の join 通知をこのルートに限り置き換える。計画の
+    // ユーザー決定事項)。枠が見つからない・他イベント・先を越された場合は
+    // 登録のみの本文になる。
+    scheduleNotification(c, async () =>
+      buildParticipantRegisteredContent({
+        eventTitle: event.title,
+        displayName: result.value.displayName,
+        entry: notifiedEntry,
+      }),
+    );
 
     const origin = new URL(c.req.url).origin;
     const pasteText = buildPasteText(

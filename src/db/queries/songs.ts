@@ -377,6 +377,27 @@ export async function deleteTake(db: Db, takeId: string): Promise<void> {
   await db.delete(take).where(eq(take.id, takeId));
 }
 
+/**
+ * 曲が持つ Take を `sort_order` 順に並べたときの、指定した Take の
+ * 1始まりの順位を返す。Take が追加された直後に「n回目」を求めるための
+ * もので、追加前の件数 + 1 は同時に複数人が Take を追加すると順位が
+ * ずれるため使わず、DB から実際の並びを見て求める。Take が見つからなければ
+ * `null`。
+ */
+export async function findTakeOrdinal(
+  db: Db,
+  songId: string,
+  takeId: string,
+): Promise<number | null> {
+  const rows = await db
+    .select({ id: take.id })
+    .from(take)
+    .where(eq(take.songId, songId))
+    .orderBy(asc(take.sortOrder));
+  const index = rows.findIndex((row) => row.id === takeId);
+  return index === -1 ? null : index + 1;
+}
+
 export interface TakeContext {
   id: string;
   songId: string;

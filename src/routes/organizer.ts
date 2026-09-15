@@ -5,6 +5,7 @@ import { listParticipants } from "../db/queries/participants";
 import { loadEventTree } from "../db/queries/songs";
 import { sha256Hex, timingSafeEqual } from "../domain/crypto";
 import { normalizeAccessKey } from "../domain/ids";
+import { buildEventEditedContent } from "../domain/notify-event";
 import { buildPasteText } from "../domain/paste-text";
 import { canEditEvent } from "../domain/permissions";
 import { isRateLimited, RATE_LIMIT_WINDOW_SECONDS } from "../domain/rate-limit";
@@ -13,6 +14,7 @@ import { validateEventEditForm } from "../domain/validation";
 import type { AppEnv } from "../env";
 import { requireOrganizer, requireViewer } from "../middleware/guards";
 import { setSession } from "../middleware/session";
+import { scheduleNotification } from "../notify/schedule";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { OrganizerPage } from "../views/pages/organizer";
 import { OrganizerLoginPage } from "../views/pages/organizer-login";
@@ -191,7 +193,21 @@ organizerApp.post("/organizer/event", requireOrganizer, async (c) => {
 
   const db = c.get("db");
   const now = Math.floor(Date.now() / 1000);
+  // 通知の「変更前」は更新前にここで確定させる(event は更新前の値のまま)。
+  const before = {
+    title: event.title,
+    region: event.region,
+    startsAt: event.startsAt,
+    durationMinutes: event.durationMinutes,
+    place: event.place,
+    notes: event.notes ?? "",
+    status: event.status,
+  };
+  const after = result.value;
+
   await updateEvent(db, event.id, { ...result.value, updatedAt: now });
+
+  scheduleNotification(c, async () => buildEventEditedContent({ before, after }));
 
   return c.redirect(`/e/${event.slug}/organizer`, 303);
 });

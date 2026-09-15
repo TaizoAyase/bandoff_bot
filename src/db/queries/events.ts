@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, gte, sql } from "drizzle-orm";
 import type { Db } from "../client";
 import { event, participant } from "../schema";
 
@@ -105,4 +105,16 @@ export async function updateEvent(
       updatedAt: input.updatedAt,
     })
     .where(eq(event.id, eventId));
+}
+
+/**
+ * `since`(UTC エポック秒)以降に作られたイベント数を、イベントに
+ * 絞り込まずサイト全体で数える(新規イベント通知のレート制限用)。
+ */
+export async function countEventsCreatedSince(db: Db, since: number): Promise<number> {
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(event)
+    .where(gte(event.createdAt, since));
+  return rows[0]?.count ?? 0;
 }
