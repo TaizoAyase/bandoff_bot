@@ -498,6 +498,40 @@ describe("Discord Bot 通知: イベント情報の編集(POST /e/:slug/organize
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("discordEnabled だけを変更しても通知は送られない", async () => {
+    const created = await createEvent({
+      title: "同じタイトル",
+      region: "東京",
+      place: "スタジオA",
+      discordEnabled: true,
+    });
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "同じタイトル",
+      region: "東京",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
+      durationMinutes: "",
+      place: "スタジオA",
+      notes: "",
+      status: "upcoming",
+      // discordEnabled キーを送らない = チェックを外し、true → false へ変更する。
+    });
+    expect(response.status).toBe(303);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // discordEnabled 自体はちゃんと変わっている(=差分はあるが通知対象外)
+    // ことを確認する。
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(eventTable)
+      .where(eq(eventTable.slug, created.slug));
+    expect(rows[0]?.discordEnabled).toBe(false);
+  });
+
   it("募集状況の変更は主催者画面の選択肢に合わせたラベルになる", async () => {
     const created = await createEvent({ title: "テストオフ会" });
     capturedRequests = [];

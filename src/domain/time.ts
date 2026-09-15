@@ -41,6 +41,21 @@ export function formatJst(epochSeconds: number): string {
   return `${year}/${month}/${day}(${weekday}) ${hour}:${minute}`;
 }
 
+/**
+ * UTC エポック秒を `9/5(土) 19:00` 形式(JST、年なし・月日は0埋めなし)で
+ * 表示する。Discord のオートコンプリート候補の name は100文字までしか
+ * 使えないため、`formatJst` より短い書式が要る(計画4-4)。
+ */
+export function formatJstShort(epochSeconds: number): string {
+  const d = toJstWallClockDate(epochSeconds);
+  const month = d.getUTCMonth() + 1;
+  const day = d.getUTCDate();
+  const weekday = WEEKDAY_JA[d.getUTCDay()];
+  const hour = pad2(d.getUTCHours());
+  const minute = pad2(d.getUTCMinutes());
+  return `${month}/${day}(${weekday}) ${hour}:${minute}`;
+}
+
 /** UTC エポック秒を `<input type="date">` 用の値(JST、`YYYY-MM-DD`)に変換する。 */
 export function toJstDateString(epochSeconds: number): string {
   const d = toJstWallClockDate(epochSeconds);

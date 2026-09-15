@@ -47,6 +47,9 @@ rootApp.post("/new", async (c) => {
     notes: formString(body.notes),
     joinCode: formString(body.joinCode),
     organizerDisplayName: formString(body.organizerDisplayName),
+    // チェックボックスは未チェックだとキー自体が送られてこない
+    // (「キーが無い = オフ」、計画6章)。
+    discordEnabled: formString(body.discordEnabled) === "on",
   };
   const organizerInstrumentsRaw = formString(body.organizerInstruments);
 
@@ -93,6 +96,7 @@ rootApp.post("/new", async (c) => {
     organizerInstruments,
     organizerTokenHash: tokenHash,
     organizerRecoveryKeyHash: recoveryKeyHash,
+    discordEnabled: result.value.discordEnabled,
     now,
   });
 
@@ -105,6 +109,11 @@ rootApp.post("/new", async (c) => {
       console.warn("discord notify skipped", { reason: "new event rate limit" });
       return null;
     }
+    // コマンド有効(2章: DISCORD_PUBLIC_KEY / DISCORD_GUILD_ID が両方設定
+    // されている)かつこのイベントが discordEnabled のときだけ、
+    // 「/bandoff open で開けます」の1行を足す(計画7章)。
+    const commandsEnabled =
+      Boolean(c.env.DISCORD_PUBLIC_KEY) && Boolean(c.env.DISCORD_GUILD_ID);
     return buildNewEventContent({
       title: result.value.title,
       organizerDisplayName: result.value.organizerDisplayName,
@@ -112,14 +121,18 @@ rootApp.post("/new", async (c) => {
       startsAt: result.value.startsAt,
       durationMinutes: result.value.durationMinutes,
       place: result.value.place,
+      discordOpenAvailable: result.value.discordEnabled && commandsEnabled,
     });
   });
 
+  // 新規作成は未ログイン状態からの操作なので、紐付け待ちは付けない
+  // (計画5-1)。
   await setSession(c, slug, {
     e: eventId,
     p: organizerParticipantId,
     o: true,
     iat: now,
+    pendingDiscord: null,
   });
 
   const origin = new URL(c.req.url).origin;

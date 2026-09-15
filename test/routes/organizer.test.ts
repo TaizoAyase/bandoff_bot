@@ -170,6 +170,72 @@ describe("POST /e/:slug/organizer/event", () => {
   });
 });
 
+describe("discordEnabled(Discord の /bandoff コマンドから開けるようにする)", () => {
+  it("reflects the event's current value on the organizer edit form", async () => {
+    const enabled = await createEvent({ discordEnabled: true });
+    const enabledHtml = await (
+      await enabled.client.get(`/e/${enabled.slug}/organizer`)
+    ).text();
+    expect(enabledHtml).toContain(
+      '<input type="checkbox" id="discordEnabled" name="discordEnabled" checked=""/>',
+    );
+
+    const disabled = await createEvent({ discordEnabled: false });
+    const disabledHtml = await (
+      await disabled.client.get(`/e/${disabled.slug}/organizer`)
+    ).text();
+    expect(disabledHtml).toContain(
+      '<input type="checkbox" id="discordEnabled" name="discordEnabled"/>',
+    );
+  });
+
+  it("saves the checkbox state on submit (checked -> unchecked)", async () => {
+    const created = await createEvent({ discordEnabled: true });
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "テストオフ会",
+      region: "東京",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
+      durationMinutes: "",
+      place: "スタジオA",
+      notes: "",
+      status: "upcoming",
+      // discordEnabled キーを送らない = チェックを外した状態
+    });
+    expect(response.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(eventTable)
+      .where(eq(eventTable.slug, created.slug));
+    expect(rows[0]?.discordEnabled).toBe(false);
+  });
+
+  it("saves the checkbox state on submit (unchecked -> checked)", async () => {
+    const created = await createEvent({ discordEnabled: false });
+    const response = await created.client.post(`/e/${created.slug}/organizer/event`, {
+      title: "テストオフ会",
+      region: "東京",
+      startsDate: "2026-09-05",
+      startsTime: "19:00",
+      durationMinutes: "",
+      place: "スタジオA",
+      notes: "",
+      status: "upcoming",
+      discordEnabled: "on",
+    });
+    expect(response.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(eventTable)
+      .where(eq(eventTable.slug, created.slug));
+    expect(rows[0]?.discordEnabled).toBe(true);
+  });
+});
+
 describe("旧データ保護: 15分刻みでない starts_at の編集フォーム", () => {
   it("shows the actual value as an extra option instead of defaulting to 00:00", async () => {
     const created = await createEvent();

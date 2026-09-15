@@ -3,6 +3,19 @@ import { LIMITS } from "../../domain/validation";
 import { FieldError } from "../components/field-error";
 import { Layout } from "../layout";
 
+export type SettingsNotice = "updated" | "discord-unlinked";
+
+const NOTICE_MESSAGES: Record<SettingsNotice, string> = {
+  updated: "更新しました",
+  "discord-unlinked": "Discord の紐付けを解除しました",
+};
+
+export function parseSettingsNotice(
+  value: string | undefined,
+): SettingsNotice | undefined {
+  return value === "updated" || value === "discord-unlinked" ? value : undefined;
+}
+
 export interface SettingsPageProps {
   slug: string;
   isParticipant: boolean;
@@ -12,8 +25,12 @@ export interface SettingsPageProps {
   errors: Record<string, string>;
   /** 表示名が完全一致する既存参加者がいるときの警告文。無ければ null。 */
   duplicateWarning: string | null;
-  /** プロフィール更新直後の通知を出すか。 */
-  updated?: boolean;
+  /** プロフィール更新・Discord 紐付け解除直後などの通知。 */
+  notice?: SettingsNotice;
+  /** Discord アカウントと紐付いているか(計画5-6)。 */
+  discordLinked: boolean;
+  /** 未紐付けで、かつイベントが `discord_enabled` のときだけ案内文を出す(計画5-6)。 */
+  showDiscordLinkHint: boolean;
   /**
    * 表示中の participant が主催者本人の Participant か。true なら
    * 「参加を取りやめる」ボタンの代わりに保護メッセージを出す
@@ -40,7 +57,9 @@ export const SettingsPage = ({
   instruments,
   errors,
   duplicateWarning,
-  updated,
+  notice,
+  discordLinked,
+  showDiscordLinkHint,
   isOrganizersOwnParticipant,
   withdrawEntries,
 }: SettingsPageProps) => (
@@ -51,7 +70,7 @@ export const SettingsPage = ({
         <a href={`/e/${slug}/`}>← 曲一覧に戻る</a>
       </p>
 
-      {updated ? <p class="notice">更新しました</p> : null}
+      {notice ? <p class="notice">{NOTICE_MESSAGES[notice]}</p> : null}
 
       <section class="card">
         <h2>引き継ぎコード</h2>
@@ -107,6 +126,24 @@ export const SettingsPage = ({
                 <button type="submit">保存する</button>
               </div>
             </form>
+          </section>
+
+          <section class="card">
+            <h2>Discord アカウント</h2>
+            {discordLinked ? (
+              <>
+                <p>Discord アカウントと紐付いています。</p>
+                <form
+                  method="post"
+                  action={`/e/${slug}/settings/discord/unlink`}
+                  data-confirm="Discord アカウントとの紐付けを解除します"
+                >
+                  <button type="submit">紐付けを解除する</button>
+                </form>
+              </>
+            ) : showDiscordLinkHint ? (
+              <p>Discord の /bandoff open から開くと紐付けられます。</p>
+            ) : null}
           </section>
 
           <section class="card">

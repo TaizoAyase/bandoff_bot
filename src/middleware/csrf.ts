@@ -97,7 +97,21 @@ function logRejection(c: Context<AppEnv>, reason: "sec-fetch-site" | "origin"): 
  * `Sec-Fetch-Site` が存在しない場合(古いブラウザや curl 等)のみ、
  * 従来どおり Origin ヘッダの完全一致にフォールバックする。
  */
+/**
+ * Discord Interactions エンドポイントのみの完全一致の除外。Discord からの
+ * リクエストには `Origin` も `Sec-Fetch-Site` も付かず、cookie も一切
+ * 使わない(署名検証で送信元を保証する、`src/discord/verify.ts`)ため
+ * CSRF の対象外にしてよい。前方一致ではなく完全一致にすることで、
+ * 末尾スラッシュ違い(`/discord/interactions/`)など他のパスが誤って
+ * 除外されないようにする。
+ */
+const DISCORD_INTERACTIONS_PATH = "/discord/interactions";
+
 export const csrf: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (c.req.path === DISCORD_INTERACTIONS_PATH) {
+    await next();
+    return;
+  }
   if (UNSAFE_METHODS.has(c.req.method)) {
     const secFetchSite = c.req.header("sec-fetch-site");
     if (secFetchSite !== undefined) {

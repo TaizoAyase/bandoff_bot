@@ -1,6 +1,6 @@
 {
   "name": "bandoff",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
@@ -18,7 +18,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply studio-parts --remote",
     "deploy": "pnpm check && pnpm build:client && wrangler deploy",
     "deploy:dry": "pnpm build:client && wrangler deploy --dry-run",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "discord:register": "node --env-file=.dev.vars.register scripts/register-discord-commands.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

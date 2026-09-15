@@ -29,3 +29,21 @@ export function formStringArray(value: FormValue): string[] {
   }
   return [];
 }
+
+/**
+ * `c.req.json()` で受けた本文(`unknown`)から `{ token: string }` の
+ * `token` を取り出す。`/session/rebind` と `/e/:slug/discord`(計画5-3)の
+ * 両方で使う。無い・空文字・型違いなら `null`。
+ */
+export function extractToken(body: unknown): string | null {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "token" in body &&
+    typeof (body as { token: unknown }).token === "string"
+  ) {
+    const token = (body as { token: string }).token;
+    return token === "" ? null : token;
+  }
+  return null;
+}

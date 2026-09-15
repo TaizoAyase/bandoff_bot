@@ -9,6 +9,7 @@ import {
   createParticipant,
   findByDisplayName,
   findParticipantById,
+  linkDiscordUser,
   listParticipants,
   withdrawParticipant,
 } from "../db/queries/participants";
@@ -156,15 +157,18 @@ participantsApp.get(
       return c.redirect(`/e/${event.slug}/`, 303);
     }
     const slot = c.req.query("slot") ?? "";
+    // 紐付け待ちがあれば表示名の初期値を Discord 側の表示名ヒントにする
+    // (計画5-4)。
     return renderPage(
       c,
       RegisterPage({
         slug: event.slug,
         slot,
-        values: { displayName: "" },
+        values: { displayName: viewer.pendingDiscord?.nameHint ?? "" },
         instruments: "",
         errors: {},
         duplicateWarning: null,
+        hasPendingDiscordLink: viewer.pendingDiscord !== null,
       }),
     );
   },
@@ -202,6 +206,7 @@ participantsApp.post(
           instruments: instrumentsRaw,
           errors: result.errors,
           duplicateWarning: null,
+          hasPendingDiscordLink: viewer.pendingDiscord !== null,
         }),
         400,
       );
@@ -218,6 +223,7 @@ participantsApp.post(
           instruments: instrumentsRaw,
           errors: {},
           duplicateWarning: `「${result.value.displayName}」という表示名は既に使われています。自分自身であれば、そのまま登録できます。`,
+          hasPendingDiscordLink: viewer.pendingDiscord !== null,
         }),
       );
     }
@@ -241,10 +247,23 @@ participantsApp.post(
       createdAt: now,
     });
 
+    // 紐付け待ちがあれば、作成した participant に自動紐付けする(計画5-4)。
+    // 既に他の participant に紐付いていたら紐付けずに登録だけ成功させる
+    // (`linkDiscordUser` は未紐付けのときだけ更新するため、結果を見ずに
+    // 紐付け待ちを消してよい)。
+    if (viewer.pendingDiscord) {
+      await linkDiscordUser(db, {
+        eventId: event.id,
+        participantId,
+        discordUserId: viewer.pendingDiscord.userId,
+      });
+    }
+
     await setSession(c, event.slug, {
       e: event.id,
       p: participantId,
       o: viewer.isOrganizer,
+      pendingDiscord: null,
     });
 
     let entryResult: string | undefined;

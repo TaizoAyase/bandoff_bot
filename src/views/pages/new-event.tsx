@@ -21,6 +21,8 @@ export const emptyNewEventFormValues: NewEventFormInput = {
   notes: "",
   joinCode: "",
   organizerDisplayName: "",
+  // 新規イベントは既定でオン(計画のユーザー決定事項)。
+  discordEnabled: true,
 };
 
 /** `/new` のイベント作成フォーム。 */
@@ -164,6 +166,24 @@ export const NewEventPage = ({ values, instruments, errors }: NewEventPageProps)
         </div>
 
         <p>主催者キーと引き継ぎコードは作成後に発行されます。</p>
+
+        <hr />
+
+        <div class="checkbox-row">
+          <input
+            type="checkbox"
+            id="discordEnabled"
+            name="discordEnabled"
+            checked={values.discordEnabled}
+          />
+          <label for="discordEnabled">
+            Discord の /bandoff コマンドから開けるようにする
+          </label>
+        </div>
+        <p>
+          オンにすると、Discord サーバーのメンバーが合言葉なしでこのイベントに
+          入れます(開始から24時間後まで)。
+        </p>
 
         <div class="actions">
           <button type="submit">作成する</button>

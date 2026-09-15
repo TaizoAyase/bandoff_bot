@@ -4,6 +4,7 @@
  * (確認ダイアログ・コピーボタン・合言葉の表示切替)は分岐の外で無条件に呼ぶ。
  */
 
+import { initDiscordOpenPage } from "./discord";
 import { startPolling } from "./polling";
 import {
   initOrganizerLoginDone,
@@ -53,6 +54,9 @@ switch (page) {
     break;
   case "withdrawn":
     initWithdrawnPage();
+    break;
+  case "discord-open":
+    void initDiscordOpenPage();
     break;
   default:
     break;

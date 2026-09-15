@@ -1,4 +1,4 @@
-import { eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "../client";
 import { event, participant } from "../schema";
 
@@ -6,6 +6,52 @@ import { event, participant } from "../schema";
 export async function findEventBySlug(db: Db, slug: string) {
   const rows = await db.select().from(event).where(eq(event.slug, slug)).limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * id からイベントを1件取得する。存在しなければ null。Discord の
+ * `/bandoff open`・ボタン押下では、slug ではなくイベント ID がやり取り
+ * されるため slug 解決とは別にこちらを使う(計画4-4)。
+ */
+export async function findEventById(db: Db, id: string) {
+  const rows = await db.select().from(event).where(eq(event.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export interface DiscordCandidateEvent {
+  id: string;
+  slug: string;
+  title: string;
+  region: string;
+  place: string;
+  startsAt: number;
+}
+
+/**
+ * `/bandoff open` のオートコンプリート・`/bandoff list` の候補イベント
+ * (計画4-4)。`discord_enabled` かつ `starts_at + 86400 >= now`
+ * (`isPast24h` が false と同値。ちょうど86400秒は含む)。締切(closed)も
+ * 含む。`starts_at` 昇順で最大25件。
+ */
+export async function listDiscordCandidateEvents(
+  db: Db,
+  now: number,
+): Promise<DiscordCandidateEvent[]> {
+  return db
+    .select({
+      id: event.id,
+      slug: event.slug,
+      title: event.title,
+      region: event.region,
+      place: event.place,
+      startsAt: event.startsAt,
+    })
+    .from(event)
+    .where(
+      and(eq(event.discordEnabled, true), sql`${event.startsAt} + 86400 >= ${now}`),
+    )
+    .orderBy(asc(event.startsAt))
+    .limit(25);
 }
 
 export interface CreateEventInput {
@@ -25,6 +71,7 @@ export interface CreateEventInput {
   organizerInstruments: string[];
   organizerTokenHash: string;
   organizerRecoveryKeyHash: string;
+  discordEnabled: boolean;
   now: number;
 }
 
@@ -52,6 +99,7 @@ export async function createEvent(db: Db, input: CreateEventInput): Promise<void
       joinCode: input.joinCode,
       organizerKeyHash: input.organizerKeyHash,
       organizerParticipantId: null,
+      discordEnabled: input.discordEnabled,
       createdAt: input.now,
       updatedAt: input.now,
     }),
@@ -80,12 +128,13 @@ export interface UpdateEventInput {
   place: string;
   notes: string;
   status: "upcoming" | "closed";
+  discordEnabled: boolean;
   updatedAt: number;
 }
 
 /**
  * 主催者画面からのイベント情報編集
- * (タイトル・地域・日時・長さ・場所・備考・status)。
+ * (タイトル・地域・日時・長さ・場所・備考・status・discordEnabled)。
  */
 export async function updateEvent(
   db: Db,
@@ -102,6 +151,7 @@ export async function updateEvent(
       place: input.place,
       notes: input.notes === "" ? null : input.notes,
       status: input.status,
+      discordEnabled: input.discordEnabled,
       updatedAt: input.updatedAt,
     })
     .where(eq(event.id, eventId));

@@ -86,6 +86,55 @@ describe("POST /new", () => {
   });
 });
 
+describe("Discord の /bandoff コマンドから開けるようにする(discordEnabled)", () => {
+  it("GET /new はチェック済みの状態で表示する(既定オン)", async () => {
+    const client = createTestClient();
+    const response = await client.get("/new");
+    const html = await response.text();
+    expect(html).toContain(
+      '<input type="checkbox" id="discordEnabled" name="discordEnabled" checked=""/>',
+    );
+  });
+
+  it("チェックを外す(キーを送らない)と discordEnabled が false で保存される", async () => {
+    const created = await createEvent({
+      title: "Discord無効オフ会",
+      discordEnabled: false,
+    });
+    const db = createDb(env.DB);
+    const rows = await db.select().from(event).where(eq(event.slug, created.slug));
+    expect(rows[0]?.discordEnabled).toBe(false);
+  });
+
+  it("何も指定しない(既定)場合は discordEnabled が true で保存される", async () => {
+    const created = await createEvent({ title: "Discord既定オフ会" });
+    const db = createDb(env.DB);
+    const rows = await db.select().from(event).where(eq(event.slug, created.slug));
+    expect(rows[0]?.discordEnabled).toBe(true);
+  });
+
+  it("バリデーションエラー時、送信したチェック状態を再描画に保持する", async () => {
+    const client = createTestClient();
+    const response = await client.post("/new", {
+      title: "",
+      region: "",
+      startsDate: "",
+      startsTime: "",
+      place: "",
+      notes: "",
+      joinCode: "",
+      organizerDisplayName: "",
+      organizerInstruments: "",
+      discordEnabled: "on",
+    });
+    expect(response.status).toBe(400);
+    const html = await response.text();
+    expect(html).toContain(
+      '<input type="checkbox" id="discordEnabled" name="discordEnabled" checked=""/>',
+    );
+  });
+});
+
 describe("開催日時(startsDate/startsTime)", () => {
   it("creates the event and shows the chosen date/time on the song list", async () => {
     const created = await createEvent({

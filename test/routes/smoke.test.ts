@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { Hono } from "hono";
+import { setSignedCookie } from "hono/cookie";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../../src/db/client";
 import { workspace } from "../../src/db/schema";
@@ -81,9 +82,12 @@ describe("signed session cookie round trip", () => {
     joinCode: "himitsu",
     organizerKeyHash: "x",
     organizerParticipantId: null,
+    discordEnabled: false,
     createdAt: 0,
     updatedAt: 0,
   };
+
+  const COOKIE_NAME = "bandoff_session";
 
   function buildTestApp() {
     const testApp = new Hono<AppEnv>();
@@ -97,7 +101,30 @@ describe("signed session cookie round trip", () => {
         e: fakeEvent.id,
         p: "participant-1",
         o: true,
+        pendingDiscord: null,
       });
+      return c.body(null);
+    });
+    testApp.get("/set-pending", async (c) => {
+      await setSession(c, fakeEvent.slug, {
+        e: fakeEvent.id,
+        p: "participant-1",
+        o: false,
+        pendingDiscord: { userId: "111111111111111111", nameHint: "にっく" },
+      });
+      return c.body(null);
+    });
+    // `setSignedCookie` へ直接、任意の(壊れた)ペイロードを渡すための経路。
+    // `parsePayload`(session.ts の非公開関数)の型検証を、cookie の
+    // ラウンドトリップ経由で確認する。
+    testApp.get("/set-raw/:payload", async (c) => {
+      await setSignedCookie(
+        c,
+        COOKIE_NAME,
+        c.req.param("payload"),
+        c.env.SESSION_SECRET,
+        { path: `/e/${fakeEvent.slug}` },
+      );
       return c.body(null);
     });
     testApp.use("/read", sessionMiddleware);
@@ -107,9 +134,15 @@ describe("signed session cookie round trip", () => {
         hasViewer: viewer !== undefined,
         participantId: viewer?.participant?.id ?? null,
         isOrganizer: viewer?.isOrganizer ?? null,
+        pendingDiscord: viewer?.pendingDiscord ?? null,
       });
     });
     return testApp;
+  }
+
+  function extractCookiePair(response: Response): string {
+    const setCookie = response.headers.getSetCookie()[0] ?? "";
+    return setCookie.split(";")[0] ?? "";
   }
 
   it("sets a cookie with the expected attributes", async () => {
@@ -144,6 +177,7 @@ describe("signed session cookie round trip", () => {
       hasViewer: true,
       participantId: null, // participant-1 は DB に存在しないため解決されない
       isOrganizer: true,
+      pendingDiscord: null,
     });
   });
 
@@ -155,6 +189,132 @@ describe("signed session cookie round trip", () => {
       hasViewer: false,
       participantId: null,
       isOrganizer: null,
+      pendingDiscord: null,
+    });
+  });
+
+  it("carries pendingDiscord (d/dn) through the signed cookie round trip", async () => {
+    const testApp = buildTestApp();
+    const setResponse = await testApp.request("/set-pending", {}, env);
+    const cookiePair = extractCookiePair(setResponse);
+
+    const readResponse = await testApp.request(
+      "/read",
+      { headers: { cookie: cookiePair } },
+      env,
+    );
+    const body = await readResponse.json();
+    expect(body).toEqual({
+      hasViewer: true,
+      participantId: null,
+      isOrganizer: false,
+      pendingDiscord: { userId: "111111111111111111", nameHint: "にっく" },
+    });
+  });
+
+  it("omits the d/dn keys entirely when there is no pending link", async () => {
+    const testApp = buildTestApp();
+    const setResponse = await testApp.request("/set", {}, env);
+    const cookiePair = extractCookiePair(setResponse);
+    // 署名 cookie は `<JSON を URL エンコードした値>.<署名>` の形。
+    // 署名検証はしていないので、先頭の JSON 部分だけ復号して見る。
+    const rawValue = cookiePair.split("=").slice(1).join("=");
+    const jsonPart = decodeURIComponent(rawValue.split(".")[0] ?? "");
+    expect(jsonPart).not.toContain('"d"');
+    expect(jsonPart).not.toContain('"dn"');
+  });
+
+  it("accepts a legacy cookie payload without d/dn keys at all", async () => {
+    const testApp = buildTestApp();
+    const legacyPayload = JSON.stringify({
+      v: 1,
+      e: fakeEvent.id,
+      p: "participant-1",
+      o: true,
+      iat: 0,
+    });
+    const setResponse = await testApp.request(
+      `/set-raw/${encodeURIComponent(legacyPayload)}`,
+      {},
+      env,
+    );
+    const cookiePair = extractCookiePair(setResponse);
+
+    const readResponse = await testApp.request(
+      "/read",
+      { headers: { cookie: cookiePair } },
+      env,
+    );
+    const body = await readResponse.json();
+    expect(body).toEqual({
+      hasViewer: true,
+      participantId: null,
+      isOrganizer: true,
+      pendingDiscord: null,
+    });
+  });
+
+  it("invalidates the whole cookie when d is present but not a valid snowflake", async () => {
+    const testApp = buildTestApp();
+    const badPayload = JSON.stringify({
+      v: 1,
+      e: fakeEvent.id,
+      p: "participant-1",
+      o: true,
+      iat: 0,
+      d: "not-a-snowflake",
+      dn: "誰か",
+    });
+    const setResponse = await testApp.request(
+      `/set-raw/${encodeURIComponent(badPayload)}`,
+      {},
+      env,
+    );
+    const cookiePair = extractCookiePair(setResponse);
+
+    const readResponse = await testApp.request(
+      "/read",
+      { headers: { cookie: cookiePair } },
+      env,
+    );
+    const body = await readResponse.json();
+    expect(body).toEqual({
+      hasViewer: false,
+      participantId: null,
+      isOrganizer: null,
+      pendingDiscord: null,
+    });
+  });
+
+  it("invalidates the whole cookie when dn exceeds the display name length limit", async () => {
+    const testApp = buildTestApp();
+    const badPayload = JSON.stringify({
+      v: 1,
+      e: fakeEvent.id,
+      p: "participant-1",
+      o: true,
+      iat: 0,
+      d: "111111111111111111",
+      dn: "あ".repeat(31),
+    });
+    const setResponse = await testApp.request(
+      `/set-raw/${encodeURIComponent(badPayload)}`,
+      {},
+      env,
+    );
+    const cookiePair = extractCookiePair(setResponse);
+
+    const readResponse = await testApp.request(
+      "/read",
+      { headers: { cookie: cookiePair } },
+      env,
+    );
+    const body = await readResponse.json();
+    expect(body).toEqual({
+      hasViewer: false,
+      participantId: null,
+      isOrganizer: null,
+      pendingDiscord: null,
     });
   });
 });

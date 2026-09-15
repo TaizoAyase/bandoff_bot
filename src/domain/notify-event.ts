@@ -19,6 +19,12 @@ export interface NewEventInput {
   startsAt: number;
   durationMinutes: number | null;
   place: string;
+  /**
+   * Discord の `/bandoff open` でこのイベントを開けるか(計画7章)。
+   * `event.discord_enabled` かつコマンド有効(`DISCORD_PUBLIC_KEY` /
+   * `DISCORD_GUILD_ID` が両方設定されている)のときだけ true にすること。
+   */
+  discordOpenAvailable: boolean;
 }
 
 /**
@@ -32,14 +38,16 @@ export function buildNewEventContent(input: NewEventInput): string {
   const region = escapeMarkdown(input.region);
   const place = escapeMarkdown(input.place);
   const period = formatEventPeriod(input.startsAt, input.durationMinutes);
-  return truncate(
-    [
-      `〔${title}〕${actor}新しいオフ会を作成しました`,
-      `- 地域: ${region}`,
-      `- 日時: ${period}`,
-      `- 場所: ${place}`,
-    ].join("\n"),
-  );
+  const lines = [
+    `〔${title}〕${actor}新しいオフ会を作成しました`,
+    `- 地域: ${region}`,
+    `- 日時: ${period}`,
+    `- 場所: ${place}`,
+  ];
+  if (input.discordOpenAvailable) {
+    lines.push("- Discord の `/bandoff open` で開けます");
+  }
+  return truncate(lines.join("\n"));
 }
 
 /** 主催者画面の「募集状況」選択肢(募集中・締切)に合わせたラベル。 */

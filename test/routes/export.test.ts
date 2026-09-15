@@ -100,4 +100,20 @@ describe("GET /e/:slug/export.json", () => {
     const active = data.participants.find((p) => p.displayName === "主催者");
     expect(active?.leftAt).toBeNull();
   });
+
+  it("does not include discordUserId in the participants list", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, { displayName: "山田" });
+
+    const response = await created.client.get(`/e/${created.slug}/export.json`);
+    const text = await response.text();
+    expect(text).not.toContain("discordUserId");
+    expect(text).not.toContain("discord_user_id");
+
+    const data = JSON.parse(text) as { participants: Record<string, unknown>[] };
+    for (const p of data.participants) {
+      expect(Object.hasOwn(p, "discordUserId")).toBe(false);
+    }
+  });
 });

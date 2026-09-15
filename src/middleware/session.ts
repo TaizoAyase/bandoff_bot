@@ -2,7 +2,9 @@ import { eq } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
 import { participant as participantTable } from "../db/schema";
-import type { AppEnv } from "../env";
+import { isValidDiscordSnowflake } from "../domain/discord";
+import { LIMITS } from "../domain/validation";
+import type { AppEnv, PendingDiscordLink } from "../env";
 
 const COOKIE_NAME = "bandoff_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 180; // 180日
@@ -16,10 +18,24 @@ export interface SessionPayload {
   /** 主催者フラグ */
   o: boolean;
   iat: number;
+  /**
+   * 保留中の Discord 紐付け候補のユーザー ID。無ければキー自体を省略する
+   * (旧 cookie との互換のため、存在チェックは `in` で行う)。
+   */
+  d?: string;
+  /** 上記に対応する、発行時点での既定表示名ヒント。 */
+  dn?: string;
 }
 
-export type SetSessionInput = Omit<SessionPayload, "v" | "iat"> &
-  Partial<Pick<SessionPayload, "iat">>;
+export type SetSessionInput = Omit<SessionPayload, "v" | "iat" | "d" | "dn"> &
+  Partial<Pick<SessionPayload, "iat">> & {
+    /**
+     * 保留中の Discord 紐付け候補。呼び出しのたびに明示させることで、
+     * 「引き継ぐ/消す」の書き漏らしを防ぐ(計画5-1)。引き継ぐ場合は
+     * 現在の `viewer?.pendingDiscord ?? null` をそのまま渡すこと。
+     */
+    pendingDiscord: PendingDiscordLink | null;
+  };
 
 function cookiePath(slug: string): string {
   return `/e/${slug}`;
@@ -45,6 +61,9 @@ export async function setSession(
     p: payload.p,
     o: payload.o,
     iat: payload.iat ?? Math.floor(Date.now() / 1000),
+    ...(payload.pendingDiscord
+      ? { d: payload.pendingDiscord.userId, dn: payload.pendingDiscord.nameHint }
+      : {}),
   };
   await setSignedCookie(c, COOKIE_NAME, JSON.stringify(value), c.env.SESSION_SECRET, {
     path: cookiePath(slug),
@@ -101,7 +120,14 @@ export const sessionMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
       found && found.eventId === event.id && found.leftAt === null ? found : null;
   }
 
-  c.set("viewer", { participant: resolvedParticipant, isOrganizer: payload.o });
+  const pendingDiscord: PendingDiscordLink | null =
+    payload.d !== undefined ? { userId: payload.d, nameHint: payload.dn ?? "" } : null;
+
+  c.set("viewer", {
+    participant: resolvedParticipant,
+    isOrganizer: payload.o,
+    pendingDiscord,
+  });
   await next();
 };
 
@@ -109,23 +135,40 @@ function parsePayload(raw: string): SessionPayload | null {
   try {
     const data: unknown = JSON.parse(raw);
     if (
-      typeof data === "object" &&
-      data !== null &&
-      "v" in data &&
-      "e" in data &&
-      "p" in data &&
-      "o" in data &&
-      "iat" in data &&
-      (data as { v: unknown }).v === 1 &&
-      typeof (data as { e: unknown }).e === "string" &&
-      (typeof (data as { p: unknown }).p === "string" ||
-        (data as { p: unknown }).p === null) &&
-      typeof (data as { o: unknown }).o === "boolean" &&
-      typeof (data as { iat: unknown }).iat === "number"
+      typeof data !== "object" ||
+      data === null ||
+      !("v" in data) ||
+      !("e" in data) ||
+      !("p" in data) ||
+      !("o" in data) ||
+      !("iat" in data) ||
+      (data as { v: unknown }).v !== 1 ||
+      typeof (data as { e: unknown }).e !== "string" ||
+      (typeof (data as { p: unknown }).p !== "string" &&
+        (data as { p: unknown }).p !== null) ||
+      typeof (data as { o: unknown }).o !== "boolean" ||
+      typeof (data as { iat: unknown }).iat !== "number"
     ) {
-      return data as SessionPayload;
+      return null;
     }
-    return null;
+
+    // `d`/`dn` は後から追加したキーなので、無い旧 cookie は引き続き有効と
+    // 扱う。ただしキーがあるのに形式が不正なら cookie 全体を無効にする
+    // (計画5-1)。
+    if ("d" in data) {
+      const d = (data as { d: unknown }).d;
+      if (typeof d !== "string" || !isValidDiscordSnowflake(d)) {
+        return null;
+      }
+    }
+    if ("dn" in data) {
+      const dn = (data as { dn: unknown }).dn;
+      if (typeof dn !== "string" || dn.length > LIMITS.DISPLAY_NAME_MAX) {
+        return null;
+      }
+    }
+
+    return data as SessionPayload;
   } catch {
     return null;
   }

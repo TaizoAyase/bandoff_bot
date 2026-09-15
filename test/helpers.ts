@@ -1,7 +1,8 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { asc, eq } from "drizzle-orm";
 import { createDb } from "../src/db/client";
-import { event as eventTable, slot, song, take } from "../src/db/schema";
+import { discordLink, event as eventTable, slot, song, take } from "../src/db/schema";
+import { sha256Hex } from "../src/domain/crypto";
 import app from "../src/index";
 
 const ORIGIN = "http://localhost";
@@ -177,6 +178,12 @@ export interface CreateEventOptions {
   organizerInstruments?: string;
   /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
   useBrowserForm?: boolean;
+  /**
+   * Discord の /bandoff コマンドから開けるようにするか。省略時は
+   * `/new` の既定値(オン)に合わせて true として送信する
+   * (チェックボックスは false のときキー自体を送らない)。
+   */
+  discordEnabled?: boolean;
 }
 
 export interface CreatedEvent {
@@ -202,7 +209,19 @@ export async function createEvent(
   options: CreateEventOptions = {},
 ): Promise<CreatedEvent> {
   const client = createTestClient();
-  const values = {
+  const values: {
+    title: string;
+    region: string;
+    startsDate: string;
+    startsTime: string;
+    durationMinutes: string;
+    place: string;
+    notes: string;
+    joinCode: string;
+    organizerDisplayName: string;
+    organizerInstruments: string;
+    discordEnabled?: string;
+  } = {
     title: options.title ?? "テストオフ会",
     region: options.region ?? "東京",
     startsDate: options.startsDate ?? "2026-09-05",
@@ -214,6 +233,11 @@ export async function createEvent(
     organizerDisplayName: options.organizerDisplayName ?? "主催者",
     organizerInstruments: options.organizerInstruments ?? "Gt",
   };
+  // チェックボックスは未チェックだとキー自体が送られてこないため、
+  // オフにしたいときだけキーを省く(既定はオン、`/new` と同じ挙動)。
+  if (options.discordEnabled ?? true) {
+    values.discordEnabled = "on";
+  }
   const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
   const response = await submit("/new", values);
   const html = await response.text();
@@ -406,6 +430,22 @@ export async function setEventStartsAt(slug: string, startsAt: number): Promise<
   await db.update(eventTable).set({ startsAt }).where(eq(eventTable.slug, slug));
 }
 
+/**
+ * イベントの `starts_at` を「実行時の現在時刻から `offsetSeconds` 秒」に
+ * 設定する(DB を直接操作)。`createEvent()` の既定の開催日は固定値
+ * (`2026-09-05`)のため、Discord 候補イベント(`isPast24h` が false、
+ * 計画4-4)のテストでは、実行時の「現在」から見て24時間以内とは限らない。
+ * 戻り値は実際に設定した `starts_at`(呼び出し側で境界計算に使える)。
+ */
+export async function setEventStartsAtOffset(
+  slug: string,
+  offsetSeconds: number,
+): Promise<number> {
+  const startsAt = Math.floor(Date.now() / 1000) + offsetSeconds;
+  await setEventStartsAt(slug, startsAt);
+  return startsAt;
+}
+
 /** `/e/:slug/songs/:id/takes` に POST して Take を追加する。 */
 export function createTake(
   client: TestClient,
@@ -418,6 +458,60 @@ export function createTake(
 export interface CreateSlotOptions {
   instrument?: string;
   note?: string;
+}
+
+export interface IssueTestDiscordLinkOptions {
+  /** Discord のユーザー ID(スノーフレーク)。省略時は固定のテスト用 ID。 */
+  discordUserId?: string;
+  displayNameHint?: string;
+  /** 有効期限までの秒数。省略時は600秒(計画2章の既定)。 */
+  expiresInSeconds?: number;
+  /** 使用済みにする場合の使用日時(秒)。省略時は未使用。 */
+  usedAt?: number;
+}
+
+/**
+ * `discord_link` に1行を直接 INSERT してテスト用の1回限りリンクを発行する。
+ * 発行コマンド(`/bandoff open` 等、Interactions エンドポイント)は
+ * Stage 3 で実装するため、ここでは D1 に直接書き込んで模す。
+ * 返り値は平文トークン(`/e/:slug/discord` への POST に使う)。
+ */
+export async function issueTestDiscordLink(
+  slug: string,
+  options: IssueTestDiscordLinkOptions = {},
+): Promise<string> {
+  const db = createDb(env.DB);
+  const eventRows = await db.select().from(eventTable).where(eq(eventTable.slug, slug));
+  const eventId = eventRows[0]?.id;
+  if (!eventId) {
+    throw new Error(`issueTestDiscordLink: event not found for slug ${slug}`);
+  }
+  const token = crypto.randomUUID();
+  const tokenHash = await sha256Hex(token);
+  const now = Math.floor(Date.now() / 1000);
+  await db.insert(discordLink).values({
+    tokenHash,
+    eventId,
+    discordUserId: options.discordUserId ?? "100000000000000001",
+    displayNameHint: options.displayNameHint ?? "Discordニックネーム",
+    expiresAt: now + (options.expiresInSeconds ?? 600),
+    usedAt: options.usedAt ?? null,
+  });
+  return token;
+}
+
+/**
+ * `/e/:slug/discord` にトークンを JSON で POST する
+ * (クライアント JS の `fetch` を模す)。
+ */
+export function consumeDiscordLink(
+  client: TestClient,
+  slug: string,
+  token: string,
+): Promise<Response> {
+  return client.post(`/e/${slug}/discord`, JSON.stringify({ token }), {
+    headers: { "content-type": "application/json" },
+  });
 }
 
 /** `/e/:slug/takes/:id/slots` に POST して枠を追加する。 */

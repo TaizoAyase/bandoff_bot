@@ -245,6 +245,13 @@ export interface NewEventFormInput {
   notes: string;
   joinCode: string;
   organizerDisplayName: string;
+  /**
+   * Discord の `/bandoff` コマンドから開けるようにするか。チェックボックスは
+   * 未チェックだとキー自体が送られてこないため、呼び出し側(ルート)で
+   * `body.discordEnabled === "on"` まで変換してから渡すこと(検証の余地が
+   * ないブール値のため、他フィールドと違い形式エラーは発生しない)。
+   */
+  discordEnabled: boolean;
 }
 
 export interface NewEventFormValue {
@@ -256,6 +263,7 @@ export interface NewEventFormValue {
   notes: string;
   joinCode: string;
   organizerDisplayName: string;
+  discordEnabled: boolean;
 }
 
 /** `/new` のイベント作成フォームを検証する。 */
@@ -324,6 +332,7 @@ export function validateNewEventForm(
       notes: notes.value,
       joinCode: joinCode.value,
       organizerDisplayName: organizerDisplayName.value,
+      discordEnabled: input.discordEnabled,
     },
   };
 }
@@ -346,6 +355,8 @@ export interface EventEditFormInput {
   place: string;
   notes: string;
   status: string;
+  /** `NewEventFormInput.discordEnabled` と同じく、ルート側で変換済みの値。 */
+  discordEnabled: boolean;
 }
 
 export interface EventEditFormValue {
@@ -356,6 +367,7 @@ export interface EventEditFormValue {
   place: string;
   notes: string;
   status: EventStatus;
+  discordEnabled: boolean;
 }
 
 /** 主催者画面(`/organizer/event`)のイベント編集フォームを検証する。 */
@@ -415,6 +427,7 @@ export function validateEventEditForm(
       place: place.value,
       notes: notes.value,
       status: status.value,
+      discordEnabled: input.discordEnabled,
     },
   };
 }

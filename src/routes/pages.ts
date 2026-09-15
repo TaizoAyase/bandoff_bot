@@ -37,6 +37,14 @@ pagesApp.get("/", requireViewer, async (c) => {
       notice: parseSongListNotice(c.req.query("notice")),
       past24h: isPast24h(event.startsAt, now),
       status: event.status,
+      // Discord 紐付けの確認バナー(計画5-5)。
+      discordLinkConfirmName:
+        viewer.participant &&
+        viewer.participant.discordUserId === null &&
+        viewer.pendingDiscord !== null
+          ? viewer.participant.displayName
+          : null,
+      showDiscordRegisterBanner: !viewer.participant && viewer.pendingDiscord !== null,
     }),
   );
 });
