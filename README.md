@@ -234,9 +234,12 @@ pnpm exec wrangler secret put SESSION_SECRET
 
 ### 6. 本番用の Discord Bot を登録する(任意)
 
-エントリーの追加・辞退を Discord の1チャンネルに通知したい場合のみ行う。
-`DISCORD_BOT_TOKEN` と `DISCORD_CHANNEL_ID` の両方が揃うまで通知機能は完全に
-no-op になり、他の動作には影響しない。
+イベントの作成・編集、曲の追加・編集、Take(2回目以降)・枠の追加、
+参加者登録、エントリーの追加・辞退を Discord の1チャンネルに通知したい
+場合のみ行う(詳細は
+`docs/bandoff-spec.md` の7章「変更の通知」を参照)。`DISCORD_BOT_TOKEN` と
+`DISCORD_CHANNEL_ID` の両方が揃うまで通知機能は完全に no-op になり、他の
+動作には影響しない。
 
 通知の送信そのものを Bot 経由にしているのは、フェーズ2で追加予定の
 スラッシュコマンドも同じ Bot で賄えるようにするため。Webhook のままだと
