@@ -89,10 +89,10 @@ src/
     event.ts          `/e/:slug` 配下のサブアプリの骨格
     auth.ts            合言葉(join)・端末トークン再結合(rebind)・復帰キー(recover)
     pages.ts           曲一覧とポーリング用 HTML 断片
-    participants.ts    参加者登録・参加者一覧
+    participants.ts    参加者登録・参加者一覧・参加者の削除(主催者)
     songs.ts           曲の登録・編集・削除、枠へのエントリー・辞退
     takes.ts           Take・Slot の追加・削除(枠構成そのものの増減)
-    me.ts              自分のエントリー一覧・設定(プロフィール編集・端末解除)
+    me.ts              自分のエントリー一覧・設定(プロフィール編集・端末解除・参加の取りやめ)
     organizer.ts       主催者ログイン・イベント編集・JSON エクスポート
   views/            Hono JSX。JSX が閉じ込められているのはここだけ
     layout.tsx        全ページ共通レイアウト(OGP なし、CSP 準拠)
@@ -235,8 +235,8 @@ pnpm exec wrangler secret put SESSION_SECRET
 ### 6. 本番用の Discord Bot を登録する(任意)
 
 イベントの作成・編集、曲の追加・編集、Take(2回目以降)・枠の追加、
-参加者登録、エントリーの追加・辞退を Discord の1チャンネルに通知したい
-場合のみ行う(詳細は
+参加者登録、エントリーの追加・辞退、参加の取りやめ(自分から)を
+Discord の1チャンネルに通知したい場合のみ行う(詳細は
 `docs/bandoff-spec.md` の7章「変更の通知」を参照)。`DISCORD_BOT_TOKEN` と
 `DISCORD_CHANNEL_ID` の両方が揃うまで通知機能は完全に no-op になり、他の
 動作には影響しない。
@@ -388,6 +388,6 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
 - スラッシュコマンド(`/bandoff list`・`/bandoff open`)と Interactions
   エンドポイント = フェーズ2。通知用の Bot 導入はフェーズ1で完了済み
 - 告知の自動化 = フェーズ3
-- イベントの削除、参加者の削除(仕様書10章に言及はなく、単に未実装)
+- イベントの削除(仕様書10章に言及はなく、単に未実装)
 - 動的ポーリング間隔、ETag/304(仕様書の判断基準に達したら検討)
 - CI(GitHub Actions)
