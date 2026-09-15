@@ -4,22 +4,26 @@ import { Layout } from "../layout";
 
 export interface ParticipantRow extends ParticipantSummary {
   /**
-   * この参加者の全エントリー(organizer が一括辞退ボタンの表示可否・
-   * 確認文言に使う)。organizer 以外への表示時は常に空配列。
+   * この参加者の全エントリー(organizer が一括辞退ボタン・「参加者から
+   * 外す」ボタンの表示可否・確認文言に使う)。organizer 以外への
+   * 表示時は常に空配列。
    */
   entries: MyAssignmentItem[];
+  /** この行が主催者本人の Participant か(「参加者から外す」を出さない)。 */
+  isOrganizersOwnParticipant: boolean;
 }
 
-export type ParticipantsNotice = "left-all";
+export type ParticipantsNotice = "left-all" | "removed";
 
 const NOTICE_MESSAGES: Record<ParticipantsNotice, string> = {
   "left-all": "辞退させました",
+  removed: "参加者から外しました",
 };
 
 export function parseParticipantsNotice(
   value: string | undefined,
 ): ParticipantsNotice | undefined {
-  return value === "left-all" ? value : undefined;
+  return value === "left-all" || value === "removed" ? value : undefined;
 }
 
 export interface ParticipantsPageProps {
@@ -67,6 +71,22 @@ export const ParticipantsPage = ({
                     .join("、")})を辞退させます`}
                 >
                   <button type="submit">全エントリーを辞退させる</button>
+                </form>
+              ) : null}
+              {isOrganizer && !p.isOrganizersOwnParticipant ? (
+                <form
+                  method="post"
+                  action={`/e/${slug}/participants/${p.id}/remove`}
+                  class="inline-form"
+                  data-confirm={
+                    p.entries.length > 0
+                      ? `${p.displayName}さんを参加者から外します。全エントリー(${p.entries
+                          .map((entry) => `${entry.songTitle}: ${entry.slotLabel}`)
+                          .join("、")})も辞退させます`
+                      : `${p.displayName}さんを参加者から外します`
+                  }
+                >
+                  <button type="submit">参加者から外す</button>
                 </form>
               ) : null}
             </li>

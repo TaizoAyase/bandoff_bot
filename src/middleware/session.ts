@@ -94,7 +94,11 @@ export const sessionMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
       .where(eq(participantTable.id, payload.p))
       .limit(1);
     const found = rows[0] ?? null;
-    resolvedParticipant = found && found.eventId === event.id ? found : null;
+    // 取りやめ・削除済み(`left_at` あり)の participant は cookie が
+    // 残っていても解決しない(計画4-2)。viewer 自体は残すので、
+    // 主催者フラグでの合言葉閲覧は続けられる。
+    resolvedParticipant =
+      found && found.eventId === event.id && found.leftAt === null ? found : null;
   }
 
   c.set("viewer", { participant: resolvedParticipant, isOrganizer: payload.o });

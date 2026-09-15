@@ -1,0 +1,1 @@
+ALTER TABLE `participant` ADD `left_at` integer;

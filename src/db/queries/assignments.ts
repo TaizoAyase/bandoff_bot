@@ -24,9 +24,12 @@ export type JoinSlotResult =
  * 枠への条件付きエントリー。仕様 9.5(350〜356行目)の
  * `INSERT ... SELECT ... WHERE NOT EXISTS` を1文で実行することで、
  * 「空きを確認してから挿入する」の隙間による二重登録を防ぐ。
- * 挿入行数が0(=既に埋まっていた)なら `{kind: "taken"}`。
- * 通常この条件付き INSERT が UNIQUE 制約に触れることはないが、
- * 砦として UNIQUE 違反の例外も同じ `{kind: "taken"}` に写像する。
+ * 挿入行数が0(=既に埋まっていた、または対象 participant が取りやめ・
+ * 削除済み)なら `{kind: "taken"}`。取りやめの `db.batch()` とこの INSERT が
+ * 競合したときに、取りやめた人のエントリーが残る隙間を塞ぐための条件も
+ * 同じ1文に含める(計画4-3)。通常この条件付き INSERT が UNIQUE 制約に
+ * 触れることはないが、砦として UNIQUE 違反の例外も同じ `{kind: "taken"}`
+ * に写像する。
  */
 export async function joinSlot(db: Db, input: JoinSlotInput): Promise<JoinSlotResult> {
   const assignmentId = newId();
@@ -36,6 +39,10 @@ export async function joinSlot(db: Db, input: JoinSlotInput): Promise<JoinSlotRe
       select ${assignmentId}, ${input.slotId}, ${input.participantId}, ${input.now}
       where not exists (
         select 1 from assignment where slot_id = ${input.slotId}
+      )
+      and exists (
+        select 1 from participant
+        where id = ${input.participantId} and left_at is null
       )
     `);
     if (result.meta.changes === 0) {

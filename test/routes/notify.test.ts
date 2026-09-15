@@ -740,6 +740,47 @@ describe("Discord Bot 通知: 登録+エントリー成功(POST /e/:slug/partici
   });
 });
 
+describe("Discord Bot 通知: 参加の取りやめ(POST /e/:slug/settings/withdraw)", () => {
+  it("自己取りやめは Discord へ1回 POST され、辞退したエントリーが本文に入る", async () => {
+    const setup = await setupForBulkLeave();
+
+    const response = await setup.participantClient.post(
+      `/e/${setup.slug}/settings/withdraw`,
+    );
+    expect(response.status).toBe(200);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toContain("山田");
+    expect(body.content).toContain("参加を取りやめ");
+    expect(body.content).toContain("曲A");
+    expect(body.content).toContain("曲B");
+    expect(body.content).toContain("曲C");
+  });
+
+  it("主催者による削除は通知しない(公開チャンネルで角が立つため)", async () => {
+    const setup = await setupForBulkLeave();
+
+    const response = await setup.client.post(
+      `/e/${setup.slug}/participants/${setup.participantId}/remove`,
+    );
+    expect(response.status).toBe(303);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("DISCORD_BOT_TOKEN 等が未設定なら自己取りやめでも fetch は呼ばれない", async () => {
+    env.DISCORD_BOT_TOKEN = "";
+    env.DISCORD_CHANNEL_ID = "";
+    const setup = await setupForBulkLeave();
+
+    const response = await setup.participantClient.post(
+      `/e/${setup.slug}/settings/withdraw`,
+    );
+    expect(response.status).toBe(200);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("Discord Bot 通知: 未設定時は no-op", () => {
   it("DISCORD_BOT_TOKEN も DISCORD_CHANNEL_ID も未設定なら fetch は呼ばれない", async () => {
     env.DISCORD_BOT_TOKEN = "";

@@ -46,3 +46,41 @@ export function buildParticipantRegisteredContent(
     `〔${eventTitle}〕${actor}参加登録し、${songLabel}の ${slotLabel} に入りました`,
   );
 }
+
+export interface ParticipantWithdrawnEntry {
+  songTitle: string;
+  takeOrdinal: number | null;
+  slotLabel: string;
+}
+
+export interface ParticipantWithdrawnInput {
+  eventTitle: string;
+  displayName: string;
+  /** 取りやめと同時に消えた全エントリー。無ければ空配列。 */
+  entries: ParticipantWithdrawnEntry[];
+}
+
+/**
+ * 参加の取りやめ(本人のみ。主催者による削除は通知しない、計画のユーザー
+ * 決定事項)の本文(N9)。エントリーが残っていた場合は、主催者の一括辞退
+ * (`notify-message.ts` の `formatMultiple`)と同じ箇条書き形式でまとめる。
+ */
+export function buildParticipantWithdrawnContent(
+  input: ParticipantWithdrawnInput,
+): string {
+  const eventTitle = escapeMarkdown(input.eventTitle);
+  const actor = formatActor(input.displayName);
+  if (input.entries.length === 0) {
+    return truncate(`〔${eventTitle}〕${actor}参加を取りやめました`);
+  }
+  const lines = input.entries.map(
+    (entry) =>
+      `- ${formatTitleWithOrdinal(entry.songTitle, entry.takeOrdinal)}の ${escapeMarkdown(entry.slotLabel)}`,
+  );
+  return truncate(
+    [
+      `〔${eventTitle}〕${actor}参加を取りやめ、以下のエントリーを辞退しました`,
+      ...lines,
+    ].join("\n"),
+  );
+}

@@ -362,6 +362,69 @@ describe("参加者一覧: 一括辞退ボタンの表示(GET /e/:slug/participa
   });
 });
 
+describe("参加者一覧: 「参加者から外す」ボタンの表示(GET /e/:slug/participants)", () => {
+  it("shows the remove form and its data-confirm to the organizer", async () => {
+    const setup = await setupForBulkLeave();
+    const response = await setup.client.get(`/e/${setup.slug}/participants`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain(
+      `action="/e/${setup.slug}/participants/${setup.participantId}/remove"`,
+    );
+    expect(html).toContain("参加者から外す");
+    expect(html).toContain(
+      'data-confirm="山田さんを参加者から外します。全エントリー(曲A: Gt1、曲B: Ba)も辞退させます"',
+    );
+  });
+
+  it("does not show the remove form to a non-organizer viewer", async () => {
+    const setup = await setupForBulkLeave();
+    const response = await setup.participantClient.get(`/e/${setup.slug}/participants`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).not.toContain("参加者から外す");
+  });
+
+  it("does not show the remove form on the organizer's own row", async () => {
+    const setup = await setupForBulkLeave();
+    const response = await setup.client.get(`/e/${setup.slug}/participants`);
+    const html = await response.text();
+
+    // 主催者自身の participant id を対象にした remove フォームは出ない
+    // (主催者は1人しかいないイベント構成のため、id 単位の確認で十分)。
+    const db = createDb(env.DB);
+    const eventRows = await db
+      .select()
+      .from(eventTable)
+      .where(eq(eventTable.slug, setup.slug));
+    const organizerParticipantId = eventRows[0]?.organizerParticipantId;
+    if (!organizerParticipantId) throw new Error("organizerParticipantId not set");
+    expect(html).not.toContain(`/participants/${organizerParticipantId}/remove`);
+  });
+
+  it("shows the remove form even for a zero-entry participant (unlike leave-all)", async () => {
+    const created = await createEvent();
+    const client = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(client, created.slug, { displayName: "枠なし次郎" });
+
+    const response = await created.client.get(`/e/${created.slug}/participants`);
+    const html = await response.text();
+    // 一括辞退ボタンとは異なり、エントリー0件でも「参加者から外す」は出す。
+    expect(html).toContain("枠なし次郎");
+    expect(html).toContain('data-confirm="枠なし次郎さんを参加者から外します"');
+  });
+
+  it("escapes a participant name containing < in the remove data-confirm attribute", async () => {
+    const setup = await setupForBulkLeave("<script>");
+    const response = await setup.client.get(`/e/${setup.slug}/participants`);
+    const html = await response.text();
+    expect(html).toContain(
+      'data-confirm="&lt;script&gt;さんを参加者から外します。全エントリー(曲A: Gt1、曲B: Ba)も辞退させます"',
+    );
+    expect(html).not.toContain("<script>さんを参加者から外します");
+  });
+});
+
 describe("POST /e/:slug/participants/:id/leave-all", () => {
   it("removes only the target participant's assignments, leaving others intact", async () => {
     const setup = await setupForBulkLeave();

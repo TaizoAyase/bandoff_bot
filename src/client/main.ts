@@ -5,7 +5,12 @@
  */
 
 import { startPolling } from "./polling";
-import { initOrganizerLoginDone, initWelcomePage, tryRebind } from "./session";
+import {
+  initOrganizerLoginDone,
+  initWelcomePage,
+  initWithdrawnPage,
+  tryRebind,
+} from "./session";
 import {
   initConfirmDialogs,
   initCopyButtons,
@@ -45,6 +50,9 @@ switch (page) {
     break;
   case "settings":
     initSettingsPage();
+    break;
+  case "withdrawn":
+    initWithdrawnPage();
     break;
   default:
     break;

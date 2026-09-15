@@ -5,6 +5,7 @@
  */
 
 import {
+  clearRecoveryKey,
   clearToken,
   loadToken,
   saveOrganizerKey,
@@ -101,6 +102,32 @@ export async function tryRebind(): Promise<void> {
   } catch {
     // ネットワークエラーは無視する。
   }
+}
+
+/**
+ * 参加取りやめ完了ページ: `<main>` の `data-slug` を読み、端末トークンと
+ * 引き継ぎコードを localStorage から消す(主催者キーは消さない。
+ * 共同主催者の主催者権限は端末の紐付けとは別物のため)。
+ *
+ * フォームの submit イベントではなく、この完了ページの**表示**をトリガーに
+ * 消す(計画5-1)。理由は2つ: (1) `data-confirm` の確認ダイアログは
+ * document への委譲なので、フォームに直接付けた submit リスナーは
+ * キャンセルより先に走ってしまい、キャンセルしても消えてしまう。
+ * (2) `GET ...?withdrawn=1` のような目印にすると、そのリンクを他人に
+ * 踏ませるだけで端末の引き継ぎコードを消せてしまう。POST の応答である
+ * この画面の表示なら CSRF 対策の内側に収まる。
+ */
+export function initWithdrawnPage(): void {
+  const root = document.querySelector("main");
+  if (!(root instanceof HTMLElement)) {
+    return;
+  }
+  const { slug } = root.dataset;
+  if (!slug) {
+    return;
+  }
+  clearToken(slug);
+  clearRecoveryKey(slug);
 }
 
 /**

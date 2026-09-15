@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { countRecentFailures, recordFailure } from "../db/queries/auth-failures";
 import { updateEvent } from "../db/queries/events";
-import { listParticipants } from "../db/queries/participants";
+import { listParticipantsForExport } from "../db/queries/participants";
 import { loadEventTree } from "../db/queries/songs";
 import { sha256Hex, timingSafeEqual } from "../domain/crypto";
 import { normalizeAccessKey } from "../domain/ids";
@@ -218,12 +218,15 @@ organizerApp.get("/export.json", requireOrganizer, async (c) => {
     return notFoundResponse(c);
   }
   const db = c.get("db");
-  const participants = await listParticipants(db, event.id);
+  // 取りやめ・削除済みの参加者も `leftAt` 付きで含める(計画4-2)。
+  // 曲の `proposedBy` 等が参照しているため、バックアップとして参照先を
+  // 欠かさないための例外。
+  const participants = await listParticipantsForExport(db, event.id);
   const songs = await loadEventTree(db, event.id);
 
   // join_code と organizer_key_hash(合言葉・主催者キーのハッシュ)は含めない。
   // participants / songs はそれぞれ token_hash・recovery_key_hash を持たない
-  // 形で既に取得している(listParticipants / loadEventTree を参照)。
+  // 形で既に取得している(listParticipantsForExport / loadEventTree を参照)。
   const data = {
     event: {
       id: event.id,

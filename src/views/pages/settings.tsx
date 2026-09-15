@@ -1,3 +1,4 @@
+import type { MyAssignmentItem } from "../../db/queries/songs";
 import { LIMITS } from "../../domain/validation";
 import { FieldError } from "../components/field-error";
 import { Layout } from "../layout";
@@ -13,6 +14,18 @@ export interface SettingsPageProps {
   duplicateWarning: string | null;
   /** プロフィール更新直後の通知を出すか。 */
   updated?: boolean;
+  /**
+   * 表示中の participant が主催者本人の Participant か。true なら
+   * 「参加を取りやめる」ボタンの代わりに保護メッセージを出す
+   * (`isParticipant` が false のときは無視される)。
+   */
+  isOrganizersOwnParticipant: boolean;
+  /**
+   * 参加を取りやめたときに一緒に消える全エントリー(確認ダイアログの
+   * 文言に使う。主催者の一括辞退と同じ見せ方)。`isParticipant` が
+   * false、または `isOrganizersOwnParticipant` のときは空配列でよい。
+   */
+  withdrawEntries: MyAssignmentItem[];
 }
 
 /**
@@ -28,6 +41,8 @@ export const SettingsPage = ({
   errors,
   duplicateWarning,
   updated,
+  isOrganizersOwnParticipant,
+  withdrawEntries,
 }: SettingsPageProps) => (
   <Layout title="設定 - bandoff" page="settings">
     <main class="page" data-slug={slug}>
@@ -109,6 +124,33 @@ export const SettingsPage = ({
             >
               <button type="submit">紐付けを解除する</button>
             </form>
+          </section>
+
+          <section class="card">
+            <h2>参加の取りやめ</h2>
+            {isOrganizersOwnParticipant ? (
+              <p class="notice">主催者は参加を取りやめられません</p>
+            ) : (
+              <>
+                <p>
+                  このオフ会への参加を取りやめます。参加し直すには、もう一度
+                  参加登録が必要です(以前の登録・エントリーには戻せません)。
+                </p>
+                <form
+                  method="post"
+                  action={`/e/${slug}/settings/withdraw`}
+                  data-confirm={
+                    withdrawEntries.length > 0
+                      ? `参加を取りやめます。全エントリー(${withdrawEntries
+                          .map((entry) => `${entry.songTitle}: ${entry.slotLabel}`)
+                          .join("、")})も辞退します`
+                      : "参加を取りやめます"
+                  }
+                >
+                  <button type="submit">参加を取りやめる</button>
+                </form>
+              </>
+            )}
           </section>
         </>
       ) : (
