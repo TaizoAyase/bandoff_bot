@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
   index,
@@ -5,6 +6,7 @@ import {
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 export const workspace = sqliteTable(
@@ -44,6 +46,12 @@ export const event = sqliteTable(
       (): AnySQLiteColumn => participant.id,
       { onDelete: "set null" },
     ),
+    // Discord の /bandoff コマンドからこのイベントを開けるようにするか。
+    // 主催者が作成フォーム・編集画面のチェックボックスで指定する
+    // (既定は新規イベントで true、既存イベントは移行で false)。
+    discordEnabled: integer("discord_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -81,7 +89,38 @@ export const participant = sqliteTable(
       t.eventId,
       t.recoveryKeyHash,
     ),
+    // 1つのイベントで、同じ Discord アカウントに紐付いた「現在参加中」の
+    // participant が2件以上できないようにする部分ユニークインデックス。
+    // 参加を取りやめた行(left_at が非 null)は対象外にするため、取りやめ後に
+    // 同じ Discord アカウントで再登録できる。
+    uniqueIndex("participant_event_id_discord_user_id_unique")
+      .on(t.eventId, t.discordUserId)
+      .where(sql`left_at IS NULL AND discord_user_id IS NOT NULL`),
   ],
+);
+
+/**
+ * Discord の `/bandoff open` 等から発行される、1回限りのイベント参照リンク用
+ * トークン。平文のトークンは保存せず、SHA-256 ハッシュだけを持つ
+ * (`token_hash` は既存の `sha256Hex` で計算する)。
+ * 発行のたびに期限切れの行を掃除するため、行数は小さく保たれる想定
+ * (計画3-2)。
+ */
+export const discordLink = sqliteTable(
+  "discord_link",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => event.id, { onDelete: "cascade" }),
+    discordUserId: text("discord_user_id").notNull(),
+    // 発行時点での既定表示名(サーバーニックネーム→グローバル表示名→
+    // ユーザー名の優先順位で決めたヒント)。
+    displayNameHint: text("display_name_hint").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    usedAt: integer("used_at"),
+  },
+  (t) => [index("discord_link_expires_at_idx").on(t.expiresAt)],
 );
 
 export const song = sqliteTable(

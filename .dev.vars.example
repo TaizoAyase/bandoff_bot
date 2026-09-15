@@ -14,3 +14,16 @@ DISCORD_BOT_TOKEN=
 # 通知を投稿するチャンネルの ID(snowflake)。Discord の設定で開発者モードを
 # 有効にし、対象チャンネルを右クリック →「チャンネル ID をコピー」で取得する。
 DISCORD_CHANNEL_ID=
+
+# Discord のスラッシュコマンド(/bandoff open・list・new)を受け付ける(任意)。
+# 以下の2つが両方揃って初めて有効になる。片方でも未設定なら
+# POST /discord/interactions は 404 を返す(通知用の DISCORD_BOT_TOKEN /
+# DISCORD_CHANNEL_ID とは独立)。
+
+# Developer Portal の General Information タブにある Public Key(16進64文字)。
+# Interactions エンドポイントに届いたリクエストの署名検証に使う。
+DISCORD_PUBLIC_KEY=
+
+# コマンドを使えるサーバー(ギルド)の ID(snowflake)。このサーバー以外・
+# DM からのコマンド実行は拒否する。
+DISCORD_GUILD_ID=

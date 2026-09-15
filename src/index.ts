@@ -3,6 +3,7 @@ import { createDb } from "./db/client";
 import type { AppEnv } from "./env";
 import { csrf } from "./middleware/csrf";
 import { securityHeaders } from "./middleware/security-headers";
+import { discordInteractionsApp } from "./routes/discord-interactions";
 import { eventApp } from "./routes/event";
 import { rootApp } from "./routes/root";
 import { errorResponse, notFoundResponse } from "./views/pages/error";
@@ -21,6 +22,7 @@ app.use("*", async (c, next) => {
 app.get("/", (c) => renderPage(c, HomePage()));
 
 app.route("/", rootApp);
+app.route("/discord", discordInteractionsApp);
 app.route("/e/:slug", eventApp);
 
 app.notFound((c) => notFoundResponse(c));

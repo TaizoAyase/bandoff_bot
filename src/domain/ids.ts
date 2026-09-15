@@ -10,9 +10,21 @@ const ACCESS_KEY_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // I/O/0/1 な�
 const ACCESS_KEY_GROUP_LENGTH = 4;
 const ACCESS_KEY_GROUPS = 3;
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** UUID v4 の新規 id を生成する。 */
 export function newId(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * `newId()` が生成する形式(UUID)かを検証する。Discord の `/bandoff open`
+ * の `event` オプション・`/bandoff list` ボタンの `custom_id` は自由入力・
+ * 改ざんが可能な値からイベント ID を取り出すため、DB を引く前に形式を
+ * 検証する(`isValidSlug` と同じ考え方、計画4-4)。
+ */
+export function isValidId(value: string): boolean {
+  return UUID_PATTERN.test(value);
 }
 
 /**

@@ -180,6 +180,22 @@ export const OrganizerPage = ({
             <FieldError message={errors.status} />
           </div>
 
+          <div class="checkbox-row">
+            <input
+              type="checkbox"
+              id="discordEnabled"
+              name="discordEnabled"
+              checked={values.discordEnabled}
+            />
+            <label for="discordEnabled">
+              Discord の /bandoff コマンドから開けるようにする
+            </label>
+          </div>
+          <p>
+            オンにすると、Discord サーバーのメンバーが合言葉なしでこのイベントに
+            入れます(開始から24時間後まで)。
+          </p>
+
           <div class="actions">
             <button type="submit">更新する</button>
           </div>

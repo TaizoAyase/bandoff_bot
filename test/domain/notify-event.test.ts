@@ -17,6 +17,7 @@ function makeNewEventInput(overrides: Partial<NewEventInput> = {}): NewEventInpu
     startsAt: STARTS_AT,
     durationMinutes: 180,
     place: "スタジオA",
+    discordOpenAvailable: false,
     ...overrides,
   };
 }
@@ -71,6 +72,19 @@ describe("buildNewEventContent", () => {
       }),
     );
     expect(content.split("\n")).toHaveLength(4);
+  });
+
+  it("discordOpenAvailable が true のときだけ「/bandoff open」の1行が足される(計画7章)", () => {
+    const withDiscord = buildNewEventContent(
+      makeNewEventInput({ discordOpenAvailable: true }),
+    );
+    expect(withDiscord.split("\n")).toHaveLength(5);
+    expect(withDiscord).toContain("- Discord の `/bandoff open` で開けます");
+
+    const withoutDiscord = buildNewEventContent(
+      makeNewEventInput({ discordOpenAvailable: false }),
+    );
+    expect(withoutDiscord).not.toContain("/bandoff open");
   });
 });
 

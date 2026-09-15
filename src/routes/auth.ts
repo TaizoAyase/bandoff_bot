@@ -3,6 +3,7 @@ import { countRecentFailures, recordFailure } from "../db/queries/auth-failures"
 import {
   findByRecoveryKeyHash,
   findByTokenHash,
+  linkDiscordUser,
   updateParticipantTokenHash,
 } from "../db/queries/participants";
 import { sha256Hex, timingSafeEqual } from "../domain/crypto";
@@ -18,7 +19,7 @@ import { JoinPage } from "../views/pages/join";
 import { RecoverPage } from "../views/pages/recover";
 import { WelcomePage } from "../views/pages/welcome";
 import { renderPage } from "../views/render";
-import { formString } from "./form";
+import { extractToken, formString } from "./form";
 
 /**
  * 合言葉(join)、端末トークン再結合(rebind)、引き継ぎコードによる復旧(recover)を
@@ -70,7 +71,15 @@ authApp.post("/join", async (c) => {
   const submitted = normalizeJoinCode(formString(body.joinCode));
 
   if (timingSafeEqual(submitted, event.joinCode)) {
-    await setSession(c, event.slug, { e: event.id, p: null, o: false, iat: now });
+    // 合言葉入場は本人確認をしていないので、紐付け待ちは付けない
+    // (計画5-1)。
+    await setSession(c, event.slug, {
+      e: event.id,
+      p: null,
+      o: false,
+      iat: now,
+      pendingDiscord: null,
+    });
     return c.redirect(`/e/${event.slug}/`, 303);
   }
 
@@ -103,10 +112,12 @@ authApp.post("/session/rebind", requireViewer, async (c) => {
     return c.text("Unauthorized", 401);
   }
 
+  // 再結合の後に確認バナーを出すため、紐付け待ちは引き継ぐ(計画5-1)。
   await setSession(c, event.slug, {
     e: event.id,
     p: participant.id,
     o: viewer.isOrganizer,
+    pendingDiscord: viewer.pendingDiscord,
   });
   return c.body(null, 204);
 });
@@ -164,7 +175,23 @@ authApp.post("/recover", requireViewer, async (c) => {
   const tokenHash = await sha256Hex(token);
   await updateParticipantTokenHash(db, found.id, tokenHash);
 
-  await setSession(c, event.slug, { e: event.id, p: found.id, o: viewer.isOrganizer });
+  // 紐付け待ちがあれば自動紐付けし(計画5-4)、消費済みとして消す
+  // (計画5-1)。別の Discord ID に紐付き済みなら上書きしない
+  // (`linkDiscordUser` が未紐付けのときだけ更新するため、ここでは
+  // 結果を見ずに常に紐付け待ちを消してよい)。
+  if (viewer.pendingDiscord) {
+    await linkDiscordUser(db, {
+      eventId: event.id,
+      participantId: found.id,
+      discordUserId: viewer.pendingDiscord.userId,
+    });
+  }
+  await setSession(c, event.slug, {
+    e: event.id,
+    p: found.id,
+    o: viewer.isOrganizer,
+    pendingDiscord: null,
+  });
 
   const origin = new URL(c.req.url).origin;
   const pasteText = buildPasteText(
@@ -188,16 +215,3 @@ authApp.post("/recover", requireViewer, async (c) => {
     }),
   );
 });
-
-function extractToken(body: unknown): string | null {
-  if (
-    typeof body === "object" &&
-    body !== null &&
-    "token" in body &&
-    typeof (body as { token: unknown }).token === "string"
-  ) {
-    const token = (body as { token: string }).token;
-    return token === "" ? null : token;
-  }
-  return null;
-}

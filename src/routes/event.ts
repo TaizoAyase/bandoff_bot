@@ -3,6 +3,7 @@ import type { AppEnv } from "../env";
 import { eventMiddleware } from "../middleware/event";
 import { sessionMiddleware } from "../middleware/session";
 import { authApp } from "./auth";
+import { discordLinkApp } from "./discord-link";
 import { meApp } from "./me";
 import { organizerApp } from "./organizer";
 import { pagesApp } from "./pages";
@@ -21,6 +22,7 @@ eventApp.use("*", eventMiddleware);
 eventApp.use("*", sessionMiddleware);
 
 eventApp.route("/", authApp);
+eventApp.route("/", discordLinkApp);
 eventApp.route("/", pagesApp);
 eventApp.route("/", participantsApp);
 eventApp.route("/", songsApp);

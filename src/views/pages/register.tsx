@@ -12,6 +12,11 @@ export interface RegisterPageProps {
   errors: Record<string, string>;
   /** 表示名が完全一致する既存参加者がいるときの警告文。無ければ null。 */
   duplicateWarning: string | null;
+  /**
+   * Discord からの紐付け待ちがあるか(計画5-4)。true のときは登録の案内と、
+   * 既に登録済みの人向けに引き継ぎコードでの入場を促す文言を出す。
+   */
+  hasPendingDiscordLink: boolean;
 }
 
 /** 参加者登録フォーム(`/e/:slug/register`)。 */
@@ -22,6 +27,7 @@ export const RegisterPage = ({
   instruments,
   errors,
   duplicateWarning,
+  hasPendingDiscordLink,
 }: RegisterPageProps) => (
   <Layout title="参加者登録 - bandoff" page="register">
     <main class="page">
@@ -29,6 +35,15 @@ export const RegisterPage = ({
       <p>
         <a href={`/e/${slug}/`}>← 曲一覧に戻る</a>
       </p>
+
+      {hasPendingDiscordLink ? (
+        <p class="notice">
+          Discord アカウントと紐付けて登録します。このイベントに登録済みの人は、
+          新しく登録せず
+          <a href={`/e/${slug}/recover`}>引き継ぎコードで入る</a>
+          から入ってください。
+        </p>
+      ) : null}
 
       {duplicateWarning ? (
         <p class="notice notice-warning">{duplicateWarning}</p>

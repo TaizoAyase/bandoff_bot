@@ -250,6 +250,7 @@ describe("validateNewEventForm", () => {
     notes: "",
     joinCode: "himitsu",
     organizerDisplayName: "主催者",
+    discordEnabled: true,
   };
 
   it("accepts a fully valid form", () => {
@@ -268,6 +269,7 @@ describe("validateNewEventForm", () => {
       notes: "",
       joinCode: "",
       organizerDisplayName: "",
+      discordEnabled: false,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -283,6 +285,13 @@ describe("validateNewEventForm", () => {
         ].sort(),
       );
     }
+  });
+
+  it("passes discordEnabled through unchanged (true and false)", () => {
+    const enabled = validateNewEventForm({ ...validInput, discordEnabled: true });
+    expect(enabled.ok && enabled.value.discordEnabled).toBe(true);
+    const disabled = validateNewEventForm({ ...validInput, discordEnabled: false });
+    expect(disabled.ok && disabled.value.discordEnabled).toBe(false);
   });
 });
 
@@ -372,6 +381,7 @@ describe("validateEventEditForm", () => {
     place: "スタジオA",
     notes: "",
     status: "upcoming",
+    discordEnabled: true,
   };
 
   it("accepts a fully valid form", () => {
@@ -393,6 +403,13 @@ describe("validateEventEditForm", () => {
     if (!result.ok) {
       expect(result.errors.status).toBeDefined();
     }
+  });
+
+  it("passes discordEnabled through unchanged (true and false)", () => {
+    const enabled = validateEventEditForm({ ...validInput, discordEnabled: true });
+    expect(enabled.ok && enabled.value.discordEnabled).toBe(true);
+    const disabled = validateEventEditForm({ ...validInput, discordEnabled: false });
+    expect(disabled.ok && disabled.value.discordEnabled).toBe(false);
   });
 });
 

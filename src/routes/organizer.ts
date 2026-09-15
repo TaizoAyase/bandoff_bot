@@ -78,11 +78,13 @@ organizerApp.post("/organizer/login", requireViewer, async (c) => {
     );
   }
 
+  // 主催者ログインは紐付け待ちを引き継ぐ(計画5-1)。
   await setSession(c, event.slug, {
     e: event.id,
     p: viewer.participant?.id ?? null,
     o: true,
     iat: now,
+    pendingDiscord: viewer.pendingDiscord,
   });
   return renderPage(
     c,
@@ -99,10 +101,12 @@ organizerApp.post("/organizer/logout", requireOrganizer, async (c) => {
   if (!event || !viewer) {
     return notFoundResponse(c);
   }
+  // 主催者ログアウトも紐付け待ちを引き継ぐ(計画5-1)。
   await setSession(c, event.slug, {
     e: event.id,
     p: viewer.participant?.id ?? null,
     o: false,
+    pendingDiscord: viewer.pendingDiscord,
   });
   return c.redirect(`/e/${event.slug}/`, 303);
 });
@@ -136,6 +140,7 @@ organizerApp.get("/organizer", requireOrganizer, async (c) => {
         place: event.place,
         notes: event.notes ?? "",
         status: event.status,
+        discordEnabled: event.discordEnabled,
       },
       errors: {},
       joinCode: event.joinCode,
@@ -164,6 +169,9 @@ organizerApp.post("/organizer/event", requireOrganizer, async (c) => {
     place: formString(body.place),
     notes: formString(body.notes),
     status: formString(body.status),
+    // チェックボックスは未チェックだとキー自体が送られてこない
+    // (「キーが無い = オフ」、計画6章)。
+    discordEnabled: formString(body.discordEnabled) === "on",
   };
 
   const result = validateEventEditForm(input);
@@ -205,6 +213,8 @@ organizerApp.post("/organizer/event", requireOrganizer, async (c) => {
   };
   const after = result.value;
 
+  // discordEnabled は N2 通知の差分対象に含めない(計画6章)ため、
+  // 上の before/after には載せていない。DB への保存だけ行う。
   await updateEvent(db, event.id, { ...result.value, updatedAt: now });
 
   scheduleNotification(c, async () => buildEventEditedContent({ before, after }));

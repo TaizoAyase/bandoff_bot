@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Db } from "../db/client";
 import {
   findByDisplayName,
+  unlinkDiscordUser,
   updateProfile,
   withdrawParticipant,
 } from "../db/queries/participants";
@@ -24,7 +25,7 @@ import { setSession } from "../middleware/session";
 import { scheduleNotification } from "../notify/schedule";
 import { errorResponse, notFoundResponse } from "../views/pages/error";
 import { MePage } from "../views/pages/me";
-import { SettingsPage } from "../views/pages/settings";
+import { parseSettingsNotice, SettingsPage } from "../views/pages/settings";
 import { WithdrawnPage } from "../views/pages/withdrawn";
 import { renderPage } from "../views/render";
 import { actorFromViewer } from "./actor";
@@ -64,6 +65,24 @@ async function loadWithdrawCardProps(
   };
 }
 
+interface DiscordCardProps {
+  discordLinked: boolean;
+  showDiscordLinkHint: boolean;
+}
+
+/**
+ * 設定画面の「Discord アカウント」カードに必要な props(計画5-6)。
+ * `/settings` の表示・`/settings/profile` の再表示の3箇所すべてから使う
+ * (`loadWithdrawCardProps` と同じ理由)。
+ */
+function discordCardProps(event: EventRow, viewer: Viewer): DiscordCardProps {
+  const discordLinked = viewer.participant?.discordUserId != null;
+  return {
+    discordLinked,
+    showDiscordLinkHint: !discordLinked && event.discordEnabled,
+  };
+}
+
 meApp.get("/me", requireViewer, async (c) => {
   const event = c.get("event");
   const viewer = c.get("viewer");
@@ -99,7 +118,8 @@ meApp.get("/settings", requireViewer, async (c) => {
       instruments: (viewer.participant?.instruments ?? []).join(", "),
       errors: {},
       duplicateWarning: null,
-      updated: c.req.query("updated") === "1",
+      notice: parseSettingsNotice(c.req.query("notice")),
+      ...discordCardProps(event, viewer),
       ...withdrawCard,
     }),
   );
@@ -138,7 +158,7 @@ meApp.post(
           instruments: instrumentsRaw,
           errors: result.errors,
           duplicateWarning: null,
-          updated: false,
+          ...discordCardProps(event, viewer),
           ...withdrawCard,
         }),
         400,
@@ -160,7 +180,7 @@ meApp.post(
             instruments: instrumentsRaw,
             errors: {},
             duplicateWarning: `「${result.value.displayName}」という表示名は既に使われています。自分自身であれば、そのまま登録できます。`,
-            updated: false,
+            ...discordCardProps(event, viewer),
             ...withdrawCard,
           }),
         );
@@ -173,9 +193,25 @@ meApp.post(
       instruments,
     });
 
-    return c.redirect(`/e/${event.slug}/settings?updated=1`, 303);
+    return c.redirect(`/e/${event.slug}/settings?notice=updated`, 303);
   },
 );
+
+/**
+ * Discord 紐付けの解除(計画5-6)。cookie(ログイン状態・主催者フラグ)は
+ * 変えない。`requireOpenForParticipants` は付けない(本人確認の設定であり
+ * 登録・エントリーではないため、closed でも使える)。
+ */
+meApp.post("/settings/discord/unlink", requireViewer, requireParticipant, async (c) => {
+  const event = c.get("event");
+  const viewer = c.get("viewer");
+  if (!event || !viewer?.participant) {
+    return notFoundResponse(c);
+  }
+  const db = c.get("db");
+  await unlinkDiscordUser(db, viewer.participant.id);
+  return c.redirect(`/e/${event.slug}/settings?notice=discord-unlinked`, 303);
+});
 
 meApp.post("/settings/unbind", requireViewer, requireParticipant, async (c) => {
   const event = c.get("event");
@@ -185,7 +221,13 @@ meApp.post("/settings/unbind", requireViewer, requireParticipant, async (c) => {
   }
   // 端末の紐付け解除は主催者フラグも含めて完全にこの端末を切り離す
   // (主催者キーも localStorage から消える。initSettingsPage を参照)。
-  await setSession(c, event.slug, { e: event.id, p: null, o: false });
+  // Discord の紐付け待ちも一緒に消す(計画5-1)。
+  await setSession(c, event.slug, {
+    e: event.id,
+    p: null,
+    o: false,
+    pendingDiscord: null,
+  });
   return c.redirect(`/e/${event.slug}/`, 303);
 });
 
@@ -226,7 +268,14 @@ meApp.post(
 
     // 共同主催者の主催者フラグは残す。端末の紐付け解除(unbind)とは違い、
     // 主催者権限は cookie 側の別の権限なので取りやめでは失わない(計画5-1)。
-    await setSession(c, event.slug, { e: event.id, p: null, o: viewer.isOrganizer });
+    // Discord の紐付け待ちは消す(参加していた participant 自体が
+    // 無くなるため)。
+    await setSession(c, event.slug, {
+      e: event.id,
+      p: null,
+      o: viewer.isOrganizer,
+      pendingDiscord: null,
+    });
 
     // 更新件数が0(同時に二重送信された等で既に取りやめ済み)のときは
     // 通知を出さない(計画4-1: 通知の二重送信を防ぐ歯止め)。
