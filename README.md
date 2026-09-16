@@ -438,6 +438,49 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
   ダッシュボードやログでこの文字列を検索すれば、どの分岐でどんなクライアント
   が弾かれたかが分かる。
 
+### 13. リリースの流れ(バージョンを上げるとき)
+
+変更履歴は v0.4.0 から `CHANGELOG.md` を唯一の出所にしている(v0.3.0 以前は
+`git tag -n99 v0.3.0` のようにタグ本文を参照する)。バージョンを上げるときは
+次の順で進める。
+
+1. `release/vX.Y.Z` ブランチで、`package.json` の `version`・
+   `src/notify/discord.ts` の User-Agent(`DiscordBot (bandoff, X.Y.Z)`)・
+   `CHANGELOG.md` の3つを更新する。`CHANGELOG.md` は先頭に新しいバージョンの
+   節(`### 変更`・`### デプロイ時の注意`・`### 既知の問題`)を追加する
+   (遡っての記載はしない)。「変更」の節はバンドメンバーが Discord で読む
+   文章なので、マイグレーション番号やファイル名を出さず、です・ます調で書く
+2. main にマージし、`vX.Y.Z` のアノテーション付きタグを打つ。**タグ本文には
+   1行の要約と `CHANGELOG.md` への参照だけを書く。** push したタグの本文は
+   後から書き換えられないため、詳細はタグではなく `CHANGELOG.md` 側に置く
+3. 上の手順8「本番 D1 にマイグレーションを適用する」(`pnpm db:migrate:remote`)
+   → 手順9「デプロイする」(`pnpm deploy`)の順で本番に反映する
+4. **デプロイの成功を確認してから**、`CHANGELOG.md` の先頭バージョンの
+   「変更」の節だけを Discord の通知チャンネルに投稿する。まず本文を確認する。
+
+   ```sh
+   pnpm changelog:announce:dry
+   ```
+
+   これは環境変数を一切読まず、ネットワークにも触れずに組み立てた本文と
+   文字数を表示するだけなので、安全に確認できる。問題なければ投稿する。
+
+   ```sh
+   pnpm changelog:announce
+   ```
+
+   `.dev.vars.announce`(gitignore 済み)に手順6で登録した
+   `DISCORD_BOT_TOKEN` と `DISCORD_CHANNEL_ID` を書いてから実行する。
+   **シェルに同名の環境変数を export したままだと、そちらの値が
+   `.dev.vars.announce` より優先される。** 別の Bot・別のチャンネル宛の
+   値が残っていると意図しないチャンネルに投稿してしまうため、実行前に
+   `echo $DISCORD_BOT_TOKEN` 等で残っていないか確認する。`.dev.vars.announce`
+   を書き忘れて存在しない場合は(`--env-file-if-exists` ではなく
+   `--env-file` を使っているため)Node がその場でエラーになり、投稿は
+   行われない。`CHANGELOG.md` の先頭バージョンと `package.json` の
+   `version` が一致しない場合、または本文が Discord の上限(2000文字)を
+   超える場合も、投稿せずエラーで終了する。
+
 ## トラブルシューティング
 
 - **テストが全ファイル失敗し `Failed to execute 'applyD1Migrations':

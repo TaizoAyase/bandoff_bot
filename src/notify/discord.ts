@@ -50,7 +50,7 @@ export async function postChannelMessage(
         headers: {
           authorization: `Bot ${botToken}`,
           "content-type": "application/json",
-          "user-agent": "DiscordBot (bandoff, 0.3.0)",
+          "user-agent": "DiscordBot (bandoff, 0.4.0)",
         },
         body: JSON.stringify({
           content,

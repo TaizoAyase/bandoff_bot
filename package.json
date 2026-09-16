@@ -1,6 +1,6 @@
 {
   "name": "bandoff",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
@@ -19,7 +19,9 @@
     "deploy": "pnpm check && pnpm build:client && wrangler deploy",
     "deploy:dry": "pnpm build:client && wrangler deploy --dry-run",
     "types": "wrangler types",
-    "discord:register": "node --env-file=.dev.vars.register scripts/register-discord-commands.mjs"
+    "discord:register": "node --env-file=.dev.vars.register scripts/register-discord-commands.mjs",
+    "changelog:announce": "node --env-file=.dev.vars.announce scripts/changelog-announce.mjs",
+    "changelog:announce:dry": "node scripts/changelog-announce.mjs --dry-run"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
