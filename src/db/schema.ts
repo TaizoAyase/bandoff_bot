@@ -143,6 +143,25 @@ export const song = sqliteTable(
   (t) => [index("song_event_id_created_at_idx").on(t.eventId, t.createdAt)],
 );
 
+/**
+ * 曲に紐づく譜面のURL。1曲に複数登録でき、ラベルは持たず並び順だけを持つ。
+ * 曲そのものの参考音源・動画を指す `song.ref_url`(単一・任意)とは別項目で、
+ * あちらは残したまま並存させる。
+ */
+export const songScoreUrl = sqliteTable(
+  "song_score_url",
+  {
+    id: text("id").primaryKey(),
+    songId: text("song_id")
+      .notNull()
+      .references(() => song.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("song_score_url_song_id_sort_order_idx").on(t.songId, t.sortOrder)],
+);
+
 export const take = sqliteTable(
   "take",
   {
