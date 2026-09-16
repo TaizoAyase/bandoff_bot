@@ -1,6 +1,7 @@
 import { PRESET_INSTRUMENTS } from "../../domain/instruments";
 import { LIMITS, type SongFormInput } from "../../domain/validation";
 import { FieldError } from "../components/field-error";
+import { ScoreUrlFields } from "../components/score-url-fields";
 import { Layout } from "../layout";
 
 export interface SongFormPageProps {
@@ -8,6 +9,8 @@ export interface SongFormPageProps {
   values: SongFormInput;
   /** パート構成(初期値は DEFAULT_SLOTS)。 */
   instruments: readonly string[];
+  /** 譜面URL(初期値は空)。 */
+  scoreUrls: readonly string[];
   errors: Record<string, string>;
 }
 
@@ -47,6 +50,7 @@ export const SongFormPage = ({
   slug,
   values,
   instruments,
+  scoreUrls,
   errors,
 }: SongFormPageProps) => (
   <Layout title="曲を追加 - bandoff" page="song-form">
@@ -93,6 +97,8 @@ export const SongFormPage = ({
           />
           <FieldError message={errors.refUrl} />
         </div>
+
+        <ScoreUrlFields scoreUrls={scoreUrls} error={errors.scoreUrls} />
 
         <div class="field">
           <label for="songKey">キー</label>

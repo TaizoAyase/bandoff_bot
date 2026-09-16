@@ -17,11 +17,16 @@ import {
 
 // src/domain/validation.ts の LIMITS.MAX_SLOTS_PER_TAKE と合わせる。
 // クライアントバンドルは Worker 側のコードと別の tsconfig でビルドするため
-// 値を重複させている。
+// 値を重複させている。LIMITS 側の値を変えるときは必ずこちらも直すこと。
 const MAX_SLOTS_PER_TAKE = 20;
 
-function cloneSlotRowTemplate(): HTMLElement | null {
-  const template = document.getElementById("slot-row-template");
+// src/domain/validation.ts の LIMITS.MAX_SCORE_URLS_PER_SONG と合わせる。
+// 理由は MAX_SLOTS_PER_TAKE と同じ。LIMITS 側の値を変えるときは必ず
+// こちらも直すこと。
+const MAX_SCORE_URLS_PER_SONG = 10;
+
+function cloneRowTemplate(templateId: string): HTMLElement | null {
+  const template = document.getElementById(templateId);
   if (!(template instanceof HTMLTemplateElement)) {
     return null;
   }
@@ -33,18 +38,40 @@ function cloneSlotRowTemplate(): HTMLElement | null {
   return row instanceof HTMLElement ? row : null;
 }
 
-export function initSongForm(): void {
-  const rows = document.getElementById("slot-rows");
-  const addButton = document.getElementById("add-slot-button");
+interface RowGroupOptions {
+  /** 行群を包む要素の id(例: `slot-rows`)。 */
+  rowsId: string;
+  /** 「+ 追加」ボタンの id。 */
+  addButtonId: string;
+  /** 空行の雛形を持つ `<template>` の id。 */
+  templateId: string;
+  /** 1行を表す要素につけた属性セレクタ(例: `[data-slot-row]`)。 */
+  rowSelector: string;
+  /** 削除ボタンの `data-action` 属性値(例: `remove-slot`)。 */
+  removeAction: string;
+  /** これ以下には減らせない行数。 */
+  min: number;
+  /** これ以上には増やせない行数。 */
+  max: number;
+}
+
+/**
+ * 1つの行グループ(パート構成・譜面URLなど)の「+ 追加」「削除」を配線する
+ * 汎用関数。対象要素が無ければ no-op(=そのページに無い行グループを
+ * 呼んでも安全)。
+ */
+function initRowGroup(options: RowGroupOptions): void {
+  const rows = document.getElementById(options.rowsId);
+  const addButton = document.getElementById(options.addButtonId);
   if (!rows || !addButton) {
     return;
   }
 
   addButton.addEventListener("click", () => {
-    if (rows.children.length >= MAX_SLOTS_PER_TAKE) {
+    if (rows.children.length >= options.max) {
       return;
     }
-    const row = cloneSlotRowTemplate();
+    const row = cloneRowTemplate(options.templateId);
     if (row) {
       rows.appendChild(row);
     }
@@ -55,13 +82,41 @@ export function initSongForm(): void {
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    if (target.dataset.action !== "remove-slot") {
+    if (target.dataset.action !== options.removeAction) {
       return;
     }
-    if (rows.children.length <= 1) {
+    if (rows.children.length <= options.min) {
       return;
     }
-    target.closest("[data-slot-row]")?.remove();
+    target.closest(options.rowSelector)?.remove();
+  });
+}
+
+/**
+ * 曲の登録・編集フォームを配線する。パート構成の行グループは編集画面には
+ * 存在しないため、その場合は `initRowGroup` が no-op になり、画面ごとに
+ * 呼び分ける必要はない。
+ */
+export function initSongForm(): void {
+  initRowGroup({
+    rowsId: "slot-rows",
+    addButtonId: "add-slot-button",
+    templateId: "slot-row-template",
+    rowSelector: "[data-slot-row]",
+    removeAction: "remove-slot",
+    // パート構成は最後の1行を消させない(従来どおり)。
+    min: 1,
+    max: MAX_SLOTS_PER_TAKE,
+  });
+  initRowGroup({
+    rowsId: "score-url-rows",
+    addButtonId: "add-score-url-button",
+    templateId: "score-url-row-template",
+    rowSelector: "[data-score-url-row]",
+    removeAction: "remove-score-url",
+    // 譜面URLは任意項目なので0件まで減らせる。
+    min: 0,
+    max: MAX_SCORE_URLS_PER_SONG,
   });
 }
 

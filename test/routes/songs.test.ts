@@ -1,8 +1,15 @@
 import { env } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb } from "../../src/db/client";
-import { assignment, event as eventTable, slot, song, take } from "../../src/db/schema";
+import {
+  assignment,
+  event as eventTable,
+  slot,
+  song,
+  songScoreUrl,
+  take,
+} from "../../src/db/schema";
 import { LIMITS } from "../../src/domain/validation";
 import {
   type CreateEventOptions,
@@ -10,6 +17,7 @@ import {
   createEvent,
   createSong,
   createTestClient,
+  editSong,
   extractSongId,
   findFirstSongSlotIds,
   joinAsViewer,
@@ -103,6 +111,77 @@ describe("POST /e/:slug/songs", () => {
 
     const response = await createSong(setup.client, setup.slug);
     expect(response.status).toBe(403);
+  });
+
+  it("saves score URLs in input order with 1-based sort_order", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      scoreUrls: ["https://example.com/b", "https://example.com/a"],
+    });
+    const songId = extractSongId(response);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId))
+      .orderBy(asc(songScoreUrl.sortOrder));
+    expect(rows.map((r) => r.url)).toEqual([
+      "https://example.com/b",
+      "https://example.com/a",
+    ]);
+    expect(rows.map((r) => r.sortOrder)).toEqual([1, 2]);
+  });
+
+  it("keeps only non-blank score URL rows", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      scoreUrls: ["https://example.com/a", "", "  "],
+    });
+    const songId = extractSongId(response);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("rejects an invalid score URL, echoes input, and creates no song", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "不正URL曲",
+      scoreUrls: ["not a url"],
+    });
+    expect(response.status).toBe(400);
+    const html = await response.text();
+    expect(html).toContain("譜面URLの形式が正しくありません");
+    expect(html).toContain("not a url");
+
+    const db = createDb(env.DB);
+    const rows = await db.select().from(song).where(eq(song.title, "不正URL曲"));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("rejects more than 10 score URLs", async () => {
+    const setup = await createEventWithParticipant();
+    const tooMany = Array.from(
+      { length: LIMITS.MAX_SCORE_URLS_PER_SONG + 1 },
+      (_, i) => `https://example.com/${i}`,
+    );
+    const response = await createSong(setup.client, setup.slug, {
+      scoreUrls: tooMany,
+    });
+    expect(response.status).toBe(400);
+    const html = await response.text();
+    expect(html).toContain("譜面URLは10件までです");
+  });
+
+  it("still succeeds when scoreUrl is not sent at all (backward compatible)", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {});
+    expect(response.status).toBe(303);
   });
 });
 
@@ -212,6 +291,81 @@ describe("曲の編集(GET/POST /e/:slug/songs/:id/edit, /e/:slug/songs/:id)", (
     const rows = await db.select().from(song).where(eq(song.id, songId));
     expect(rows[0]?.title).toBe("主催者が編集");
   });
+
+  it("shows existing score URLs as input values on the edit form", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "既存譜面URLあり",
+      scoreUrls: ["https://example.com/a", "https://example.com/b"],
+    });
+    const songId = extractSongId(response);
+
+    const getResponse = await setup.client.get(`/e/${setup.slug}/songs/${songId}/edit`);
+    const html = await getResponse.text();
+    expect(html).toContain('value="https://example.com/a"');
+    expect(html).toContain('value="https://example.com/b"');
+  });
+
+  it("replaces score URLs on edit (2 -> 1)", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "編集で差し替え",
+      scoreUrls: ["https://example.com/old1", "https://example.com/old2"],
+    });
+    const songId = extractSongId(response);
+
+    const postResponse = await editSong(setup.client, setup.slug, songId, {
+      scoreUrls: ["https://example.com/new"],
+    });
+    expect(postResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId))
+      .orderBy(asc(songScoreUrl.sortOrder));
+    expect(rows.map((r) => r.url)).toEqual(["https://example.com/new"]);
+  });
+
+  it("removes all score URLs when none are sent on edit", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "編集で全削除",
+      scoreUrls: ["https://example.com/a"],
+    });
+    const songId = extractSongId(response);
+
+    const postResponse = await editSong(setup.client, setup.slug, songId, {});
+    expect(postResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("saves a single score URL sent alone (parseBody({ all: true }) regression check)", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "1本だけ送る",
+    });
+    const songId = extractSongId(response);
+
+    const postResponse = await editSong(setup.client, setup.slug, songId, {
+      scoreUrls: ["https://example.com/single"],
+    });
+    expect(postResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows.map((r) => r.url)).toEqual(["https://example.com/single"]);
+  });
 });
 
 describe("曲の削除(POST /e/:slug/songs/:id/delete)", () => {
@@ -300,6 +454,58 @@ describe("曲の削除(POST /e/:slug/songs/:id/delete)", () => {
       `/e/${setup.slug}/songs/${songId}/delete`,
     );
     expect(deleteResponse.status).toBe(403);
+  });
+
+  it("cascades to song_score_url when a song is deleted", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "譜面URLごと削除",
+      scoreUrls: ["https://example.com/a", "https://example.com/b"],
+    });
+    const songId = extractSongId(response);
+
+    const deleteResponse = await setup.client.post(
+      `/e/${setup.slug}/songs/${songId}/delete`,
+    );
+    expect(deleteResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe("曲一覧の表示に譜面URLが出る", () => {
+  it("shows numbered score links with rel=noreferrer", async () => {
+    const setup = await createEventWithParticipant();
+    await createSong(setup.client, setup.slug, {
+      title: "表示確認曲",
+      scoreUrls: ["https://example.com/a", "https://example.com/b"],
+    });
+
+    const response = await setup.client.get(`/e/${setup.slug}/`);
+    const html = await response.text();
+    expect(html).toContain(">譜面1<");
+    expect(html).toContain(">譜面2<");
+    expect(html).toContain('href="https://example.com/a"');
+    expect(html).toContain('href="https://example.com/b"');
+    expect(html).toContain('rel="noreferrer"');
+  });
+
+  it("shows a fragment score link on the polling fragment endpoint", async () => {
+    const setup = await createEventWithParticipant();
+    await createSong(setup.client, setup.slug, {
+      title: "断片譜面確認曲",
+      scoreUrls: ["https://example.com/a"],
+    });
+
+    const response = await setup.client.get(`/e/${setup.slug}/fragments/songs`);
+    const html = await response.text();
+    expect(html).toContain(">譜面1<");
+    expect(html).toContain('rel="noreferrer"');
   });
 });
 

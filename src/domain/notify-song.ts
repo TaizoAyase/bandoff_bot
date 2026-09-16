@@ -43,6 +43,8 @@ export interface SongEditedFields {
   refUrl: string;
   songKey: string;
   notes: string;
+  /** 譜面URL。並び順(sort_order)を含めて比較する。 */
+  scoreUrls: readonly string[];
 }
 
 export interface SongEditedInput {
@@ -57,8 +59,20 @@ export interface SongEditedInput {
 }
 
 /**
- * 曲情報編集の本文。変わった項目だけを箇条書きにする。参考 URL・備考は
- * 値そのものを出さず「変更しました」だけにする。何も変わっていなければ
+ * 譜面URLの集合が変わったか。並べ替えも利用者から見える変更なので
+ * 「変更あり」として扱う(要素ごとの前後比較)。
+ */
+function scoreUrlsChanged(
+  before: readonly string[],
+  after: readonly string[],
+): boolean {
+  if (before.length !== after.length) return true;
+  return before.some((url, index) => url !== after[index]);
+}
+
+/**
+ * 曲情報編集の本文。変わった項目だけを箇条書きにする。参考 URL・譜面URL・
+ * 備考は値そのものを出さず「変更しました」だけにする。何も変わっていなければ
  * `null`(呼び出し側は送信しない)。
  */
 export function buildSongEditedContent(input: SongEditedInput): string | null {
@@ -76,6 +90,12 @@ export function buildSongEditedContent(input: SongEditedInput): string | null {
 
   const refUrlLine = changedFlagLine("参考URL", before.refUrl !== after.refUrl);
   if (refUrlLine) lines.push(refUrlLine);
+
+  const scoreUrlsLine = changedFlagLine(
+    "譜面URL",
+    scoreUrlsChanged(before.scoreUrls, after.scoreUrls),
+  );
+  if (scoreUrlsLine) lines.push(scoreUrlsLine);
 
   const notesLine = changedFlagLine("備考", before.notes !== after.notes);
   if (notesLine) lines.push(notesLine);

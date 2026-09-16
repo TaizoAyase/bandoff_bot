@@ -82,6 +82,7 @@ function makeSongFields(overrides: Partial<SongEditedFields> = {}): SongEditedFi
     refUrl: "",
     songKey: "",
     notes: "",
+    scoreUrls: [],
     ...overrides,
   };
 }
@@ -144,6 +145,49 @@ describe("buildSongEditedContent", () => {
     expect(content).not.toContain("example.com");
   });
 
+  it("譜面URLが増えたときは値を出さず「変更しました」だけになる", () => {
+    const content = buildSongEditedContent(
+      makeSongEditedInput(
+        { scoreUrls: ["https://example.com/a"] },
+        { scoreUrls: ["https://example.com/a", "https://example.com/b"] },
+      ),
+    );
+    expect(content).toContain("- 譜面URLを変更しました");
+    expect(content).not.toContain("example.com");
+  });
+
+  it("譜面URLが減ったときは値を出さず「変更しました」だけになる", () => {
+    const content = buildSongEditedContent(
+      makeSongEditedInput(
+        { scoreUrls: ["https://example.com/a", "https://example.com/b"] },
+        { scoreUrls: ["https://example.com/a"] },
+      ),
+    );
+    expect(content).toContain("- 譜面URLを変更しました");
+    expect(content).not.toContain("example.com");
+  });
+
+  it("譜面URLが同じ集合でも並び順だけ違えば変更ありになる", () => {
+    const content = buildSongEditedContent(
+      makeSongEditedInput(
+        { scoreUrls: ["https://example.com/a", "https://example.com/b"] },
+        { scoreUrls: ["https://example.com/b", "https://example.com/a"] },
+      ),
+    );
+    expect(content).toContain("- 譜面URLを変更しました");
+  });
+
+  it("譜面URLが before・after で同一なら行が出ない", () => {
+    const urls = ["https://example.com/a", "https://example.com/b"];
+    const content = buildSongEditedContent(
+      makeSongEditedInput(
+        { scoreUrls: urls, title: "旧曲名" },
+        { scoreUrls: urls, title: "新曲名" },
+      ),
+    );
+    expect(content).not.toContain("譜面URL");
+  });
+
   it("備考が変わったときは値を出さず「変更しました」だけになる", () => {
     const content = buildSongEditedContent(
       makeSongEditedInput({ notes: "旧備考" }, { notes: "新備考" }),
@@ -160,6 +204,7 @@ describe("buildSongEditedContent", () => {
       refUrl: "",
       songKey: "",
       notes: "",
+      scoreUrls: [],
     };
     // DB の null は呼び出し側で "" に正規化してから渡す前提。
     const after: SongEditedFields = { ...before };

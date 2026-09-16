@@ -51,7 +51,8 @@ textarea {
   margin-bottom: 12px;
 }
 
-.field label {
+.field label,
+.field .field-label {
   display: block;
   font-weight: bold;
   margin-bottom: 4px;
@@ -205,6 +206,31 @@ textarea {
   flex: 1;
 }
 
+/* 譜面URL欄。行の集まりを指す見出しなので fieldset + legend にしてある
+   (score-url-fields.tsx 参照)。ブラウザ既定の枠線・余白を消して、
+   他の .field と同じ見た目に揃える。 */
+.score-url-fields {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.score-url-fields > legend {
+  padding: 0;
+}
+
+/* 曲登録・編集フォームの譜面URL行 */
+.score-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.score-url-row input {
+  flex: 1;
+}
+
 /* 曲カードのヘッダ・下部アクション */
 .song-header {
   display: flex;
@@ -220,6 +246,15 @@ textarea {
 .song-edit-link {
   font-size: 0.9em;
   white-space: nowrap;
+}
+
+/* 曲カードの譜面リンク一覧(譜面1・譜面2…) */
+.song-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
 }
 
 .song-actions,

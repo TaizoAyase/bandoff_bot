@@ -1,19 +1,28 @@
 import { LIMITS, type SongFormInput } from "../../domain/validation";
 import { FieldError } from "../components/field-error";
+import { ScoreUrlFields } from "../components/score-url-fields";
 import { Layout } from "../layout";
 
 export interface SongEditPageProps {
   slug: string;
   songId: string;
   values: SongFormInput;
+  scoreUrls: readonly string[];
   errors: Record<string, string>;
 }
 
 /**
  * 曲情報の編集フォーム(`/e/:slug/songs/:id/edit`)。枠構成(Take・Slot)は
- * 対象外で、タイトル・アーティスト・参考URL・キー・備考のみを編集する。
+ * 対象外で、タイトル・アーティスト・参考URL・譜面URL・キー・備考のみを
+ * 編集する。
  */
-export const SongEditPage = ({ slug, songId, values, errors }: SongEditPageProps) => (
+export const SongEditPage = ({
+  slug,
+  songId,
+  values,
+  scoreUrls,
+  errors,
+}: SongEditPageProps) => (
   <Layout title="曲を編集 - bandoff" page="song-edit">
     <main class="page">
       <h1>曲を編集</h1>
@@ -58,6 +67,8 @@ export const SongEditPage = ({ slug, songId, values, errors }: SongEditPageProps
           />
           <FieldError message={errors.refUrl} />
         </div>
+
+        <ScoreUrlFields scoreUrls={scoreUrls} error={errors.scoreUrls} />
 
         <div class="field">
           <label for="songKey">キー</label>
