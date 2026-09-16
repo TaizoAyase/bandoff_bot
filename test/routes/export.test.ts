@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEvent,
   createSong,
+  extractSongId,
   findFirstSongSlotIds,
   joinAsViewer,
   registerParticipant,
@@ -67,6 +68,21 @@ describe("GET /e/:slug/export.json", () => {
     const song = data.songs.find((s) => s.title === "曲ツリー確認");
     expect(song).toBeDefined();
     expect(song?.takes.length).toBeGreaterThan(0);
+  });
+
+  it("includes scoreUrls in registered order", async () => {
+    const created = await createEvent();
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "譜面URL確認曲",
+      scoreUrls: ["https://example.com/a", "https://example.com/b"],
+    });
+    const songId = extractSongId(songResponse);
+    const response = await created.client.get(`/e/${created.slug}/export.json`);
+    const data = (await response.json()) as {
+      songs: { id: string; scoreUrls: string[] }[];
+    };
+    const song = data.songs.find((s) => s.id === songId);
+    expect(song?.scoreUrls).toEqual(["https://example.com/a", "https://example.com/b"]);
   });
 
   it("includes durationMinutes in the event data", async () => {

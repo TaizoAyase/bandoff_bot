@@ -15,6 +15,7 @@ import {
   validatePlace,
   validateRefUrl,
   validateRegion,
+  validateScoreUrls,
   validateSlotForm,
   validateSlotNote,
   validateSongForm,
@@ -368,6 +369,94 @@ describe("validateSongSlots", () => {
 
   it("rejects when there are no non-blank rows", () => {
     expect(validateSongSlots(["", "  "]).ok).toBe(false);
+  });
+});
+
+describe("validateScoreUrls", () => {
+  it("accepts an empty list (optional field)", () => {
+    expect(validateScoreUrls([])).toEqual({ ok: true, value: [] });
+  });
+
+  it("ignores blank and whitespace-only rows", () => {
+    expect(validateScoreUrls(["https://example.com/a", "", "  "])).toEqual({
+      ok: true,
+      value: ["https://example.com/a"],
+    });
+  });
+
+  it("accepts http and https URLs and preserves input order", () => {
+    const result = validateScoreUrls(["https://example.com/b", "http://example.com/a"]);
+    expect(result).toEqual({
+      ok: true,
+      value: ["https://example.com/b", "http://example.com/a"],
+    });
+  });
+
+  it("rejects non-http(s) protocols", () => {
+    const result = validateScoreUrls(["javascript:alert(1)"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.scoreUrls).toBe(
+        "譜面URLはhttpまたはhttpsのURLを入力してください",
+      );
+    }
+    expect(validateScoreUrls(["ftp://example.com"]).ok).toBe(false);
+  });
+
+  it("rejects malformed URLs", () => {
+    const result = validateScoreUrls(["not a url"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.scoreUrls).toBe("譜面URLの形式が正しくありません");
+    }
+  });
+
+  it("rejects URLs over the 500 character limit", () => {
+    const longUrl = `https://example.com/${"a".repeat(500)}`;
+    const result = validateScoreUrls([longUrl]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.scoreUrls).toBe("譜面URLは500文字以内で入力してください");
+    }
+  });
+
+  it("rejects when there are more than 10 non-blank URLs", () => {
+    const urls = Array.from({ length: 11 }, (_, i) => `https://example.com/${i}`);
+    const result = validateScoreUrls(urls);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.scoreUrls).toBe("譜面URLは10件までです");
+    }
+  });
+
+  it("accepts exactly 10 non-blank URLs", () => {
+    const urls = Array.from({ length: 10 }, (_, i) => `https://example.com/${i}`);
+    expect(validateScoreUrls(urls).ok).toBe(true);
+  });
+
+  it("collapses duplicate URLs into one, keeping the first occurrence", () => {
+    const result = validateScoreUrls([
+      "https://example.com/a",
+      "https://example.com/b",
+      "https://example.com/a",
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      value: ["https://example.com/a", "https://example.com/b"],
+    });
+  });
+
+  it("counts the limit after deduplication (11 rows with 1 duplicate pair is 10)", () => {
+    const urls = [
+      ...Array.from({ length: 10 }, (_, i) => `https://example.com/${i}`),
+      "https://example.com/0",
+    ];
+    expect(urls.length).toBe(11);
+    const result = validateScoreUrls(urls);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.length).toBe(10);
+    }
   });
 });
 

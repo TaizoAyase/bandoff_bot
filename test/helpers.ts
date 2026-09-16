@@ -318,6 +318,8 @@ export interface CreateSongOptions {
   songKey?: string;
   notes?: string;
   instruments?: string[];
+  /** 譜面URL。省略時は0件(既存テストへの影響なし)。 */
+  scoreUrls?: string[];
   /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
   useBrowserForm?: boolean;
 }
@@ -338,8 +340,46 @@ export async function createSong(
   for (const instrument of instruments) {
     params.append("instrument", instrument);
   }
+  for (const url of options.scoreUrls ?? []) {
+    params.append("scoreUrl", url);
+  }
   const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
   return submit(`/e/${slug}/songs`, params);
+}
+
+export interface EditSongOptions {
+  title?: string;
+  artist?: string;
+  refUrl?: string;
+  songKey?: string;
+  notes?: string;
+  /**
+   * 譜面URL。省略時は0件で送信する(= 全削除)。`Record` では同名キーを
+   * 複数送れないため、複数件を送るにはこのヘルパの `URLSearchParams` 組み立てが必要。
+   */
+  scoreUrls?: string[];
+  /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
+  useBrowserForm?: boolean;
+}
+
+/** `/e/:slug/songs/:id` に POST して曲情報を編集する(譜面URLを複数送れる)。 */
+export function editSong(
+  client: TestClient,
+  slug: string,
+  songId: string,
+  options: EditSongOptions = {},
+): Promise<Response> {
+  const params = new URLSearchParams();
+  params.set("title", options.title ?? "テスト曲");
+  params.set("artist", options.artist ?? "");
+  params.set("refUrl", options.refUrl ?? "");
+  params.set("songKey", options.songKey ?? "");
+  params.set("notes", options.notes ?? "");
+  for (const url of options.scoreUrls ?? []) {
+    params.append("scoreUrl", url);
+  }
+  const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
+  return submit(`/e/${slug}/songs/${songId}`, params);
 }
 
 /**

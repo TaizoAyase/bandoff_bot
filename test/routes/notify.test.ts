@@ -8,6 +8,7 @@ import {
   createSlot,
   createSong,
   createTake,
+  editSong,
   extractSongId,
   findFirstSongAndTakeId,
   findFirstSongSlotIds,
@@ -642,6 +643,52 @@ describe("Discord Bot 通知: 曲情報の編集(POST /e/:slug/songs/:id)", () =
       `/e/${created.slug}/songs/${songId}`,
       { title: "曲", artist: "", refUrl: "", songKey: "", notes: "" },
     );
+    expect(editResponse.status).toBe(303);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("譜面URLだけを変えた編集では値を出さず「変更しました」だけになる", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "曲",
+      scoreUrls: ["https://example.com/a"],
+    });
+    const songId = extractSongId(songResponse);
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const editResponse = await editSong(created.client, created.slug, songId, {
+      title: "曲",
+      scoreUrls: ["https://example.com/a", "https://example.com/b"],
+    });
+    expect(editResponse.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      [
+        "〔テストオフ会〕主催者さんが「曲」の曲情報を変更しました",
+        "- 譜面URLを変更しました",
+      ].join("\n"),
+    );
+    expect(body.content).not.toContain("example.com");
+  });
+
+  it("譜面URL2件を持つ曲を同じ内容で再送しても通知は送られない", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    const scoreUrls = ["https://example.com/a", "https://example.com/b"];
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "曲",
+      scoreUrls,
+    });
+    const songId = extractSongId(songResponse);
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const editResponse = await editSong(created.client, created.slug, songId, {
+      title: "曲",
+      scoreUrls,
+    });
     expect(editResponse.status).toBe(303);
     expect(fetchSpy).not.toHaveBeenCalled();
   });

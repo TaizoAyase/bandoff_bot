@@ -1,4 +1,5 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { newId } from "../../domain/ids";
 import { numberInstruments } from "../../domain/instruments";
 import type { Db } from "../client";
@@ -7,6 +8,7 @@ import {
   participant as participantTable,
   slot,
   song,
+  songScoreUrl,
   take,
 } from "../schema";
 
@@ -43,13 +45,15 @@ export interface SongNode {
   proposedBy: string;
   createdAt: number;
   takes: TakeNode[];
+  scoreUrls: string[];
 }
 
 /**
  * イベント内の曲を、Take・Slot・Assignment(担当者名つき)まで組み立てた
- * 木構造として取得する。songs / takes / slots / assignments+participant の
- * 4クエリで取り、メモリ上で組み立てる(N+1 を避けるため)。
- * 曲は created_at 昇順、Take / Slot は sort_order 昇順。
+ * 木構造として取得する。songs / takes+譜面URL / slots / assignments+participant の
+ * 5クエリ(takes と譜面URLは1回の batch)で取り、メモリ上で組み立てる
+ * (N+1 を避けるため)。曲は created_at 昇順、Take / Slot / 譜面URL は
+ * sort_order 昇順。
  */
 export async function loadEventTree(db: Db, eventId: string): Promise<SongNode[]> {
   const songs = await db
@@ -62,11 +66,20 @@ export async function loadEventTree(db: Db, eventId: string): Promise<SongNode[]
   }
 
   const songIds = songs.map((s) => s.id);
-  const takes = await db
-    .select()
-    .from(take)
-    .where(inArray(take.songId, songIds))
-    .orderBy(asc(take.sortOrder));
+  // takes と譜面URLはどちらも songIds にしか依存しないため、1回の batch に
+  // まとめて D1 への往復を増やさない(曲一覧はポーリングで繰り返し叩かれる)。
+  const [takes, scoreUrlRows] = await db.batch([
+    db
+      .select()
+      .from(take)
+      .where(inArray(take.songId, songIds))
+      .orderBy(asc(take.sortOrder)),
+    db
+      .select({ songId: songScoreUrl.songId, url: songScoreUrl.url })
+      .from(songScoreUrl)
+      .where(inArray(songScoreUrl.songId, songIds))
+      .orderBy(asc(songScoreUrl.sortOrder)),
+  ]);
 
   const takeIds = takes.map((t) => t.id);
   const slots =
@@ -140,6 +153,16 @@ export async function loadEventTree(db: Db, eventId: string): Promise<SongNode[]
     }
   }
 
+  const scoreUrlsBySongId = new Map<string, string[]>();
+  for (const row of scoreUrlRows) {
+    const list = scoreUrlsBySongId.get(row.songId);
+    if (list) {
+      list.push(row.url);
+    } else {
+      scoreUrlsBySongId.set(row.songId, [row.url]);
+    }
+  }
+
   return songs.map((s) => ({
     id: s.id,
     title: s.title,
@@ -150,6 +173,7 @@ export async function loadEventTree(db: Db, eventId: string): Promise<SongNode[]
     proposedBy: s.proposedBy,
     createdAt: s.createdAt,
     takes: takesBySongId.get(s.id) ?? [],
+    scoreUrls: scoreUrlsBySongId.get(s.id) ?? [],
   }));
 }
 
@@ -163,11 +187,13 @@ export interface CreateSongInput {
   proposedBy: string;
   /** Take1 の初期枠構成。楽器名を sort_order 順に並べたもの。 */
   instruments: readonly string[];
+  /** 譜面URL。ラベルは持たず、並び順(sort_order)だけを持つ。 */
+  scoreUrls: readonly string[];
   now: number;
 }
 
 /**
- * 曲・Take1・初期枠を原子的に作成する。
+ * 曲・Take1・初期枠・譜面URLを原子的に作成する。
  */
 export async function createSong(
   db: Db,
@@ -184,8 +210,17 @@ export async function createSong(
     createdBy: input.proposedBy,
     createdAt: input.now,
   }));
+  const scoreUrlValues = input.scoreUrls.map((url, index) => ({
+    id: newId(),
+    songId,
+    url,
+    sortOrder: index + 1,
+    createdAt: input.now,
+  }));
 
-  await db.batch([
+  // db.batch は非空タプルを要求し、insert().values([]) は空配列で例外を
+  // 投げるため、譜面URLが0件のときは文そのものを積まない。
+  const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
     db.insert(song).values({
       id: songId,
       eventId: input.eventId,
@@ -206,7 +241,11 @@ export async function createSong(
       createdAt: input.now,
     }),
     db.insert(slot).values(slotValues),
-  ]);
+  ];
+  if (scoreUrlValues.length > 0) {
+    statements.push(db.insert(songScoreUrl).values(scoreUrlValues));
+  }
+  await db.batch(statements);
 
   return { songId };
 }
@@ -231,11 +270,13 @@ export interface SongContext {
   proposedBy: string;
   /** この曲のどの Slot にも誰もエントリーしていないか。 */
   hasAnyAssignment: boolean;
+  /** 譜面URL。sort_order 昇順。 */
+  scoreUrls: string[];
 }
 
 /**
- * 曲を、編集・削除の権限判定に必要な事実(誰もエントリーしていないか)まで
- * 含めて取得する。曲が存在しなければ null。
+ * 曲を、編集・削除の権限判定に必要な事実(誰もエントリーしていないか)・
+ * 譜面URLまで含めて取得する。曲が存在しなければ null。
  */
 export async function findSongContext(
   db: Db,
@@ -247,13 +288,20 @@ export async function findSongContext(
     return null;
   }
 
-  const assignmentRows = await db
-    .select({ id: assignment.id })
-    .from(assignment)
-    .innerJoin(slot, eq(assignment.slotId, slot.id))
-    .innerJoin(take, eq(slot.takeId, take.id))
-    .where(eq(take.songId, songId))
-    .limit(1);
+  const [assignmentRows, scoreUrlRows] = await db.batch([
+    db
+      .select({ id: assignment.id })
+      .from(assignment)
+      .innerJoin(slot, eq(assignment.slotId, slot.id))
+      .innerJoin(take, eq(slot.takeId, take.id))
+      .where(eq(take.songId, songId))
+      .limit(1),
+    db
+      .select({ url: songScoreUrl.url })
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId))
+      .orderBy(asc(songScoreUrl.sortOrder)),
+  ]);
 
   return {
     id: row.id,
@@ -265,6 +313,7 @@ export async function findSongContext(
     notes: row.notes,
     proposedBy: row.proposedBy,
     hasAnyAssignment: assignmentRows.length > 0,
+    scoreUrls: scoreUrlRows.map((r) => r.url),
   };
 }
 
@@ -274,24 +323,57 @@ export interface UpdateSongInput {
   refUrl: string;
   songKey: string;
   notes: string;
+  /** 譜面URL。全削除→再挿入するため、編集後の全件をこの順で渡す。 */
+  scoreUrls: readonly string[];
+  now: number;
 }
 
-/** 曲情報(タイトル・アーティスト・参考URL・キー・備考)を編集する。枠構成は対象外。 */
+/**
+ * 曲情報(タイトル・アーティスト・参考URL・キー・備考・譜面URL)を編集する。
+ * 枠構成は対象外。
+ *
+ * 譜面URLは差分更新ではなく全削除→再挿入する。理由:
+ * - 譜面URLには識別子になるものが無い(ラベル無し・URL文字列だけ)。
+ *   並べ替えは正当な編集操作なので、行の同一性を決める手段がない。
+ * - 1曲あたり最大10行しかなく、全消し・全入れのコストは無視できる。
+ * - db.batch は D1 の暗黙トランザクションなので、「0件の瞬間」が他の
+ *   リクエストから見えることはない。
+ *
+ * 再挿入する行の created_at は編集時刻(input.now)で上書きされる。元の
+ * 値を保つには「URL文字列でマッチさせて引き継ぐ」しかなく、重複や並べ替え
+ * で破綻する上、この列は現状どこからも読まれていない(並びは sort_order、
+ * 表示にも通知にも created_at は出ない)。
+ */
 export async function updateSong(
   db: Db,
   songId: string,
   input: UpdateSongInput,
 ): Promise<void> {
-  await db
-    .update(song)
-    .set({
-      title: input.title,
-      artist: input.artist === "" ? null : input.artist,
-      refUrl: input.refUrl === "" ? null : input.refUrl,
-      songKey: input.songKey === "" ? null : input.songKey,
-      notes: input.notes === "" ? null : input.notes,
-    })
-    .where(eq(song.id, songId));
+  const scoreUrlValues = input.scoreUrls.map((url, index) => ({
+    id: newId(),
+    songId,
+    url,
+    sortOrder: index + 1,
+    createdAt: input.now,
+  }));
+
+  const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
+    db
+      .update(song)
+      .set({
+        title: input.title,
+        artist: input.artist === "" ? null : input.artist,
+        refUrl: input.refUrl === "" ? null : input.refUrl,
+        songKey: input.songKey === "" ? null : input.songKey,
+        notes: input.notes === "" ? null : input.notes,
+      })
+      .where(eq(song.id, songId)),
+    db.delete(songScoreUrl).where(eq(songScoreUrl.songId, songId)),
+  ];
+  if (scoreUrlValues.length > 0) {
+    statements.push(db.insert(songScoreUrl).values(scoreUrlValues));
+  }
+  await db.batch(statements);
 }
 
 /** 曲を削除する。CASCADE により Take・Slot・Assignment も削除される。 */

@@ -191,6 +191,10 @@ Worker 名と D1 名だけ別にしてあるのは、公開 URL のホスト名�
   たびに再発しうる。
 - **テストの D1 の分離単位はファイル単位**(`@cloudflare/vitest-pool-workers`
   の仕様、`isolatedStorage` は廃止済み)。詳細は上の `pnpm check` の節を参照。
+- **参考URL・譜面URLの外部リンクには必ず `rel="noreferrer"` を付ける**
+  (`src/views/components/song-card.tsx`)。曲一覧のページ URL は秘密の
+  slug を含むため、付け忘れるとクリック時に Referer としてリンク先の
+  外部サイトへ漏れる。
 
 ## デプロイ
 

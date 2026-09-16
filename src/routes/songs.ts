@@ -23,7 +23,12 @@ import {
   canJoinAs,
   canLeave,
 } from "../domain/permissions";
-import { LIMITS, validateSongForm, validateSongSlots } from "../domain/validation";
+import {
+  LIMITS,
+  validateScoreUrls,
+  validateSongForm,
+  validateSongSlots,
+} from "../domain/validation";
 import type { AppEnv } from "../env";
 import {
   requireOpenForParticipants,
@@ -59,6 +64,7 @@ songsApp.get("/songs/new", requireViewer, requireParticipant, async (c) => {
       slug: event.slug,
       values: emptySongFormValues,
       instruments: DEFAULT_SLOTS,
+      scoreUrls: [],
       errors: {},
     }),
   );
@@ -88,6 +94,7 @@ songsApp.post(
           slug: event.slug,
           values: emptySongFormValues,
           instruments: DEFAULT_SLOTS,
+          scoreUrls: [],
           errors: { title: `曲は${LIMITS.MAX_SONGS_PER_EVENT}曲までです` },
         }),
         400,
@@ -103,14 +110,17 @@ songsApp.post(
       notes: formString(body.notes),
     };
     const rawInstruments = formStringArray(body.instrument);
+    const rawScoreUrls = formStringArray(body.scoreUrl);
 
     const formResult = validateSongForm(input);
     const slotsResult = validateSongSlots(rawInstruments);
+    const scoreUrlsResult = validateScoreUrls(rawScoreUrls);
 
-    if (!formResult.ok || !slotsResult.ok) {
+    if (!formResult.ok || !slotsResult.ok || !scoreUrlsResult.ok) {
       const errors: Record<string, string> = {
         ...(formResult.ok ? {} : formResult.errors),
         ...(slotsResult.ok ? {} : slotsResult.errors),
+        ...(scoreUrlsResult.ok ? {} : scoreUrlsResult.errors),
       };
       return renderPage(
         c,
@@ -118,6 +128,7 @@ songsApp.post(
           slug: event.slug,
           values: input,
           instruments: rawInstruments.length > 0 ? rawInstruments : DEFAULT_SLOTS,
+          scoreUrls: rawScoreUrls,
           errors,
         }),
         400,
@@ -134,6 +145,7 @@ songsApp.post(
       notes: formResult.value.notes,
       proposedBy: viewer.participant.id,
       instruments: slotsResult.value,
+      scoreUrls: scoreUrlsResult.value,
       now,
     });
 
@@ -179,6 +191,7 @@ songsApp.get("/songs/:id/edit", requireViewer, async (c) => {
         songKey: context.songKey ?? "",
         notes: context.notes ?? "",
       },
+      scoreUrls: context.scoreUrls,
       errors: {},
     }),
   );
@@ -203,7 +216,10 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
     return errorResponse(c, 403, permission.message);
   }
 
-  const body = await c.req.parseBody();
+  // 同名フィールドが複数来る譜面URLを拾うため { all: true } が必須。付け忘れると
+  // 同名フィールドは最後の1件だけが残り、譜面URLが黙って1本しか保存されなくなる
+  // (formString は配列が来ても先頭を取るだけなので、他フィールドへの影響はない)。
+  const body = await c.req.parseBody({ all: true });
   const input = {
     title: formString(body.title),
     artist: formString(body.artist),
@@ -211,11 +227,23 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
     songKey: formString(body.songKey),
     notes: formString(body.notes),
   };
+  const rawScoreUrls = formStringArray(body.scoreUrl);
   const result = validateSongForm(input);
-  if (!result.ok) {
+  const scoreUrlsResult = validateScoreUrls(rawScoreUrls);
+  if (!result.ok || !scoreUrlsResult.ok) {
+    const errors: Record<string, string> = {
+      ...(result.ok ? {} : result.errors),
+      ...(scoreUrlsResult.ok ? {} : scoreUrlsResult.errors),
+    };
     return renderPage(
       c,
-      SongEditPage({ slug: event.slug, songId, values: input, errors: result.errors }),
+      SongEditPage({
+        slug: event.slug,
+        songId,
+        values: input,
+        scoreUrls: rawScoreUrls,
+        errors,
+      }),
       400,
     );
   }
@@ -228,10 +256,16 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
     refUrl: context.refUrl ?? "",
     songKey: context.songKey ?? "",
     notes: context.notes ?? "",
+    scoreUrls: context.scoreUrls,
   };
-  const after = result.value;
+  const after = { ...result.value, scoreUrls: scoreUrlsResult.value };
 
-  await updateSong(db, songId, result.value);
+  const now = Math.floor(Date.now() / 1000);
+  await updateSong(db, songId, {
+    ...result.value,
+    scoreUrls: scoreUrlsResult.value,
+    now,
+  });
 
   scheduleNotification(c, async () =>
     buildSongEditedContent({

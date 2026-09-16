@@ -56,6 +56,17 @@ export const SongCard = ({
           </a>
         </p>
       ) : null}
+      {song.scoreUrls.length > 0 ? (
+        <ul class="song-scores">
+          {song.scoreUrls.map((url, index) => (
+            <li>
+              {/* rel="noreferrer" は必須。付け忘れると秘密の slug を含む URL が
+                  Referer として外部サイトに渡る(参考リンクと同じ理由)。 */}
+              <a href={url} rel="noreferrer">{`譜面${index + 1}`}</a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {song.notes ? <p class="song-notes">{song.notes}</p> : null}
 
       {song.takes.map((take, index) => {

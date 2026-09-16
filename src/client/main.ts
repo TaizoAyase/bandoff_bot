@@ -47,6 +47,7 @@ switch (page) {
     break;
   }
   case "song-form":
+  case "song-edit":
     initSongForm();
     break;
   case "settings":
