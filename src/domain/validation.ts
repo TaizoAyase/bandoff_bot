@@ -21,6 +21,8 @@ export const LIMITS = {
   SONG_TITLE_MAX: 100,
   ARTIST_MAX: 100,
   REF_URL_MAX: 500,
+  /** 譜面URL1本の文字数上限。参考URLと同じ長さに揃える。 */
+  SCORE_URL_MAX: 500,
   SONG_KEY_MAX: 20,
   NOTES_MAX: 500,
   JOIN_CODE_MIN: 1,
@@ -32,6 +34,8 @@ export const LIMITS = {
   MAX_TAKES_PER_SONG: 5,
   MAX_SLOTS_PER_TAKE: 20,
   MAX_SONGS_PER_EVENT: 200,
+  /** 1曲に登録できる譜面URLの件数上限。 */
+  MAX_SCORE_URLS_PER_SONG: 10,
 } as const;
 
 /**
@@ -125,31 +129,36 @@ export function validateSlotNote(value: string): FieldResult<string> {
   return optionalText(stripControlChars(value), LIMITS.SLOT_NOTE_MAX, "メモ");
 }
 
-/** 参考URL(任意)を検証する。http/https のみ許可する。 */
-export function validateRefUrl(value: string): FieldResult<string> {
+/**
+ * http/https の URL(任意)を検証する共通ヘルパ。空文字は許可し、
+ * 上限文字数とエラー文言に出すラベルを呼び出し側から渡す。
+ */
+function httpUrl(value: string, max: number, label: string): FieldResult<string> {
   const trimmed = value.trim();
   if (trimmed === "") {
     return { ok: true, value: "" };
   }
-  if (trimmed.length > LIMITS.REF_URL_MAX) {
-    return {
-      ok: false,
-      error: `参考URLは${LIMITS.REF_URL_MAX}文字以内で入力してください`,
-    };
+  if (trimmed.length > max) {
+    return { ok: false, error: `${label}は${max}文字以内で入力してください` };
   }
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    return { ok: false, error: "参考URLの形式が正しくありません" };
+    return { ok: false, error: `${label}の形式が正しくありません` };
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return {
       ok: false,
-      error: "参考URLはhttpまたはhttpsのURLを入力してください",
+      error: `${label}はhttpまたはhttpsのURLを入力してください`,
     };
   }
   return { ok: true, value: trimmed };
+}
+
+/** 参考URL(任意)を検証する。http/https のみ許可する。 */
+export function validateRefUrl(value: string): FieldResult<string> {
+  return httpUrl(value, LIMITS.REF_URL_MAX, "参考URL");
 }
 
 /** 合言葉の照合・保存用の正規化。NFKC 正規化 + 前後空白除去。大文字小文字は区別する。 */
@@ -535,6 +544,41 @@ export function validateSongSlots(
     }
   }
   return { ok: true, value: trimmed };
+}
+
+/**
+ * 曲の譜面URL(複数)を検証する。空行は無視し、ラベルを持たないため
+ * 同じURLが複数行あっても情報が増えない。trim後の完全一致で先勝ち除去する
+ * (`new URL()` による正規化はせず、ユーザーの入力を黙って書き換えない)。
+ * 任意項目なので0件も許可する。
+ */
+export function validateScoreUrls(rawUrls: string[]): ValidationResult<string[]> {
+  const trimmed = rawUrls.map((v) => v.trim()).filter((v) => v !== "");
+
+  const deduped: string[] = [];
+  for (const url of trimmed) {
+    if (!deduped.includes(url)) {
+      deduped.push(url);
+    }
+  }
+
+  if (deduped.length > LIMITS.MAX_SCORE_URLS_PER_SONG) {
+    return {
+      ok: false,
+      errors: {
+        scoreUrls: `譜面URLは${LIMITS.MAX_SCORE_URLS_PER_SONG}件までです`,
+      },
+    };
+  }
+
+  for (const url of deduped) {
+    const result = httpUrl(url, LIMITS.SCORE_URL_MAX, "譜面URL");
+    if (!result.ok) {
+      return { ok: false, errors: { scoreUrls: result.error } };
+    }
+  }
+
+  return { ok: true, value: deduped };
 }
 
 export interface SlotFormInput {
