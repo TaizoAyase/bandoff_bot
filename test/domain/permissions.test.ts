@@ -228,25 +228,35 @@ describe("仕様 4章の権限表", () => {
   });
 });
 
-describe("canEditSong(登録者と主催者が編集可)", () => {
+describe("canEditSong(参加登録した人なら誰でも編集可、主催者も編集可)", () => {
   it.each([
     {
+      label: "登録者本人",
       actor: { participantId: "p1", isOrganizer: false },
-      song: { proposedBy: "p1" },
       expected: true,
     },
     {
+      label: "別の参加者",
       actor: { participantId: "p2", isOrganizer: false },
-      song: { proposedBy: "p1" },
+      expected: true,
+    },
+    {
+      label: "別の参加者かつ主催者",
+      actor: { participantId: "p2", isOrganizer: true },
+      expected: true,
+    },
+    {
+      label: "参加登録していない閲覧者",
+      actor: { participantId: null, isOrganizer: false },
       expected: false,
     },
     {
-      actor: { participantId: "p2", isOrganizer: true },
-      song: { proposedBy: "p1" },
+      label: "未登録の主催者フラグのみ",
+      actor: { participantId: null, isOrganizer: true },
       expected: true,
     },
-  ])("actor=$actor song=$song -> $expected", ({ actor, song, expected }) => {
-    expect(canEditSong(actor, song).ok).toBe(expected);
+  ])("$label -> $expected", ({ actor, expected }) => {
+    expect(canEditSong(actor).ok).toBe(expected);
   });
 });
 

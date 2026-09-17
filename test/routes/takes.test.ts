@@ -215,6 +215,24 @@ describe("GET /e/:slug/takes/:id/slots/new", () => {
     );
     expect(response.status).toBe(200);
   });
+
+  it("is forbidden for a participant once the event is closed", async () => {
+    const setup = await setupEventWithSongAndParticipant();
+    await closeEvent(setup.slug);
+    const response = await setup.participantClient.get(
+      `/e/${setup.slug}/takes/${setup.takeId}/slots/new`,
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("allows the organizer to open the form even once the event is closed", async () => {
+    const setup = await setupEventWithSong();
+    await closeEvent(setup.slug);
+    const response = await setup.client.get(
+      `/e/${setup.slug}/takes/${setup.takeId}/slots/new`,
+    );
+    expect(response.status).toBe(200);
+  });
 });
 
 describe("POST /e/:slug/takes/:id/slots", () => {

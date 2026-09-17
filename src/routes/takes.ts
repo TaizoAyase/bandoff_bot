@@ -127,34 +127,40 @@ takesApp.post(
   },
 );
 
-takesApp.get("/takes/:id/slots/new", requireViewer, requireParticipant, async (c) => {
-  const event = c.get("event");
-  const viewer = c.get("viewer");
-  if (!event || !viewer) {
-    return notFoundResponse(c);
-  }
-  if (!canAddSlot(actorFromViewer(viewer)).ok) {
-    return errorResponse(c, 403, "枠を追加する権限がありません");
-  }
+takesApp.get(
+  "/takes/:id/slots/new",
+  requireViewer,
+  requireParticipant,
+  requireOpenForParticipants,
+  async (c) => {
+    const event = c.get("event");
+    const viewer = c.get("viewer");
+    if (!event || !viewer) {
+      return notFoundResponse(c);
+    }
+    if (!canAddSlot(actorFromViewer(viewer)).ok) {
+      return errorResponse(c, 403, "枠を追加する権限がありません");
+    }
 
-  const db = c.get("db");
-  const takeId = c.req.param("id");
-  const context = await findTakeWithContext(db, takeId);
-  if (!context || context.song.eventId !== event.id) {
-    return notFoundResponse(c);
-  }
+    const db = c.get("db");
+    const takeId = c.req.param("id");
+    const context = await findTakeWithContext(db, takeId);
+    if (!context || context.song.eventId !== event.id) {
+      return notFoundResponse(c);
+    }
 
-  return renderPage(
-    c,
-    SlotFormPage({
-      slug: event.slug,
-      takeId,
-      songTitle: context.song.title,
-      values: emptySlotFormValues,
-      errors: {},
-    }),
-  );
-});
+    return renderPage(
+      c,
+      SlotFormPage({
+        slug: event.slug,
+        takeId,
+        songTitle: context.song.title,
+        values: emptySlotFormValues,
+        errors: {},
+      }),
+    );
+  },
+);
 
 takesApp.post(
   "/takes/:id/slots",

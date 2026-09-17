@@ -69,20 +69,22 @@ export function canDeleteSong(actor: Actor, song: SongOwnership): PermissionResu
 }
 
 /**
- * 曲情報の編集。仕様書には明記がないが、計画「確定した決定事項」で
- * 「曲情報は登録者と主催者が編集可」と定めている。
+ * 曲情報の編集。仕様 4章(権限表)に「曲情報の編集: 参加者○・主催者○」を
+ * 追加した。削除(`canDeleteSong`)とは異なり登録者に限らず参加者なら誰でも
+ * 編集できる。編集は誰が変更したかが通知に出て後から直せるが、削除は
+ * 取り返しがつかないため、基準を分けている(削除は従来どおり登録者本人か
+ * つ空の場合のみ)。
+ *
+ * 編集ルートには(登録画面へ誘導する)`requireParticipant` を挟んでいない
+ * ため、主催者キーのみで participant を持たない cookie でも実際に到達しうる。
+ * その cookie を締め出すと共同主催者が自分の participant を作らずに編集
+ * できなくなるため、`isOrganizer` を先に見る。
  */
-export function canEditSong(
-  actor: Actor,
-  song: { proposedBy: string },
-): PermissionResult {
+export function canEditSong(actor: Actor): PermissionResult {
   if (actor.isOrganizer) {
     return OK;
   }
-  if (actor.participantId && actor.participantId === song.proposedBy) {
-    return OK;
-  }
-  return { ok: false, message: "曲を登録した本人か主催者のみ編集できます" };
+  return requireRegisteredParticipant(actor, "曲情報を編集");
 }
 
 export interface TakeDeletion {

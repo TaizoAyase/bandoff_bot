@@ -30,7 +30,7 @@ export const SongCard = ({
   const hasAnyAssignment = song.takes.some((t) =>
     t.slots.some((s) => s.assignment !== null),
   );
-  const canEdit = canEditSong(actor, { proposedBy: song.proposedBy }).ok;
+  const canEdit = canEditSong(actor).ok;
   const canDelete = canDeleteSong(actor, {
     proposedBy: song.proposedBy,
     isEmpty: !hasAnyAssignment,
