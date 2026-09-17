@@ -45,6 +45,22 @@ describe("GET /e/:slug/songs/new", () => {
     const response = await setup.client.get(`/e/${setup.slug}/songs/new`);
     expect(response.status).toBe(200);
   });
+
+  it("is forbidden for participants once the event is closed", async () => {
+    const setup = await createEventWithParticipant();
+    await closeEvent(setup.slug);
+
+    const response = await setup.client.get(`/e/${setup.slug}/songs/new`);
+    expect(response.status).toBe(403);
+  });
+
+  it("allows the organizer to open the form even once the event is closed", async () => {
+    const created = await createEvent();
+    await closeEvent(created.slug);
+
+    const response = await created.client.get(`/e/${created.slug}/songs/new`);
+    expect(response.status).toBe(200);
+  });
 });
 
 describe("POST /e/:slug/songs", () => {
@@ -419,6 +435,30 @@ describe("曲の編集(GET/POST /e/:slug/songs/:id/edit, /e/:slug/songs/:id)", (
       .from(songScoreUrl)
       .where(eq(songScoreUrl.songId, songId));
     expect(rows.map((r) => r.url)).toEqual(["https://example.com/single"]);
+  });
+
+  it("forbids a participant from opening the edit form once the event is closed", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, { title: "closed曲" });
+    const songId = extractSongId(response);
+    await closeEvent(setup.slug);
+
+    const getResponse = await setup.client.get(`/e/${setup.slug}/songs/${songId}/edit`);
+    expect(getResponse.status).toBe(403);
+  });
+
+  it("allows the organizer to open the edit form even once the event is closed", async () => {
+    const created = await createEvent();
+    const participant = await joinAsViewer(created.slug, created.joinCode);
+    await registerParticipant(participant, created.slug, { displayName: "山田" });
+    const response = await createSong(participant, created.slug, { title: "曲" });
+    const songId = extractSongId(response);
+    await closeEvent(created.slug);
+
+    const getResponse = await created.client.get(
+      `/e/${created.slug}/songs/${songId}/edit`,
+    );
+    expect(getResponse.status).toBe(200);
   });
 });
 

@@ -49,26 +49,32 @@ import { formString, formStringArray } from "./form";
 /** 曲登録と、枠へのエントリー・辞退。 */
 export const songsApp = new Hono<AppEnv>({ strict: false });
 
-songsApp.get("/songs/new", requireViewer, requireParticipant, async (c) => {
-  const event = c.get("event");
-  const viewer = c.get("viewer");
-  if (!event || !viewer) {
-    return notFoundResponse(c);
-  }
-  if (!canAddSong(actorFromViewer(viewer)).ok) {
-    return c.text("Forbidden", 403);
-  }
-  return renderPage(
-    c,
-    SongFormPage({
-      slug: event.slug,
-      values: emptySongFormValues,
-      instruments: DEFAULT_SLOTS,
-      scoreUrls: [],
-      errors: {},
-    }),
-  );
-});
+songsApp.get(
+  "/songs/new",
+  requireViewer,
+  requireParticipant,
+  requireOpenForParticipants,
+  async (c) => {
+    const event = c.get("event");
+    const viewer = c.get("viewer");
+    if (!event || !viewer) {
+      return notFoundResponse(c);
+    }
+    if (!canAddSong(actorFromViewer(viewer)).ok) {
+      return c.text("Forbidden", 403);
+    }
+    return renderPage(
+      c,
+      SongFormPage({
+        slug: event.slug,
+        values: emptySongFormValues,
+        instruments: DEFAULT_SLOTS,
+        scoreUrls: [],
+        errors: {},
+      }),
+    );
+  },
+);
 
 songsApp.post(
   "/songs",
@@ -164,39 +170,44 @@ songsApp.post(
   },
 );
 
-songsApp.get("/songs/:id/edit", requireViewer, async (c) => {
-  const event = c.get("event");
-  const viewer = c.get("viewer");
-  if (!event || !viewer) {
-    return notFoundResponse(c);
-  }
-  const db = c.get("db");
-  const songId = c.req.param("id");
-  const context = await findSongContext(db, songId);
-  if (!context || context.eventId !== event.id) {
-    return notFoundResponse(c);
-  }
-  const permission = canEditSong(actorFromViewer(viewer));
-  if (!permission.ok) {
-    return errorResponse(c, 403, permission.message);
-  }
-  return renderPage(
-    c,
-    SongEditPage({
-      slug: event.slug,
-      songId,
-      values: {
-        title: context.title,
-        artist: context.artist ?? "",
-        refUrl: context.refUrl ?? "",
-        songKey: context.songKey ?? "",
-        notes: context.notes ?? "",
-      },
-      scoreUrls: context.scoreUrls,
-      errors: {},
-    }),
-  );
-});
+songsApp.get(
+  "/songs/:id/edit",
+  requireViewer,
+  requireOpenForParticipants,
+  async (c) => {
+    const event = c.get("event");
+    const viewer = c.get("viewer");
+    if (!event || !viewer) {
+      return notFoundResponse(c);
+    }
+    const db = c.get("db");
+    const songId = c.req.param("id");
+    const context = await findSongContext(db, songId);
+    if (!context || context.eventId !== event.id) {
+      return notFoundResponse(c);
+    }
+    const permission = canEditSong(actorFromViewer(viewer));
+    if (!permission.ok) {
+      return errorResponse(c, 403, permission.message);
+    }
+    return renderPage(
+      c,
+      SongEditPage({
+        slug: event.slug,
+        songId,
+        values: {
+          title: context.title,
+          artist: context.artist ?? "",
+          refUrl: context.refUrl ?? "",
+          songKey: context.songKey ?? "",
+          notes: context.notes ?? "",
+        },
+        scoreUrls: context.scoreUrls,
+        errors: {},
+      }),
+    );
+  },
+);
 
 songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c) => {
   const event = c.get("event");
