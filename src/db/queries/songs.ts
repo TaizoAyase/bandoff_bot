@@ -2,6 +2,7 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { newId } from "../../domain/ids";
 import { numberInstruments } from "../../domain/instruments";
+import type { ScoreUrlInput, ScoreUrlNode } from "../../domain/score-urls";
 import type { Db } from "../client";
 import {
   assignment,
@@ -45,7 +46,8 @@ export interface SongNode {
   proposedBy: string;
   createdAt: number;
   takes: TakeNode[];
-  scoreUrls: string[];
+  /** 譜面URL。任意の名前(未設定なら `null`)を伴い、sort_order 昇順。 */
+  scoreUrls: ScoreUrlNode[];
 }
 
 /**
@@ -75,7 +77,11 @@ export async function loadEventTree(db: Db, eventId: string): Promise<SongNode[]
       .where(inArray(take.songId, songIds))
       .orderBy(asc(take.sortOrder)),
     db
-      .select({ songId: songScoreUrl.songId, url: songScoreUrl.url })
+      .select({
+        songId: songScoreUrl.songId,
+        url: songScoreUrl.url,
+        label: songScoreUrl.label,
+      })
       .from(songScoreUrl)
       .where(inArray(songScoreUrl.songId, songIds))
       .orderBy(asc(songScoreUrl.sortOrder)),
@@ -153,13 +159,14 @@ export async function loadEventTree(db: Db, eventId: string): Promise<SongNode[]
     }
   }
 
-  const scoreUrlsBySongId = new Map<string, string[]>();
+  const scoreUrlsBySongId = new Map<string, ScoreUrlNode[]>();
   for (const row of scoreUrlRows) {
+    const node: ScoreUrlNode = { url: row.url, label: row.label };
     const list = scoreUrlsBySongId.get(row.songId);
     if (list) {
-      list.push(row.url);
+      list.push(node);
     } else {
-      scoreUrlsBySongId.set(row.songId, [row.url]);
+      scoreUrlsBySongId.set(row.songId, [node]);
     }
   }
 
@@ -187,8 +194,11 @@ export interface CreateSongInput {
   proposedBy: string;
   /** Take1 の初期枠構成。楽器名を sort_order 順に並べたもの。 */
   instruments: readonly string[];
-  /** 譜面URL。ラベルは持たず、並び順(sort_order)だけを持つ。 */
-  scoreUrls: readonly string[];
+  /**
+   * 譜面URL。任意の名前と並び順(sort_order)を持つ。`label` が `""` なら
+   * 名前なしとして `null` で保存する。
+   */
+  scoreUrls: readonly ScoreUrlInput[];
   now: number;
 }
 
@@ -210,10 +220,11 @@ export async function createSong(
     createdBy: input.proposedBy,
     createdAt: input.now,
   }));
-  const scoreUrlValues = input.scoreUrls.map((url, index) => ({
+  const scoreUrlValues = input.scoreUrls.map((row, index) => ({
     id: newId(),
     songId,
-    url,
+    url: row.url,
+    label: row.label === "" ? null : row.label,
     sortOrder: index + 1,
     createdAt: input.now,
   }));
@@ -270,8 +281,8 @@ export interface SongContext {
   proposedBy: string;
   /** この曲のどの Slot にも誰もエントリーしていないか。 */
   hasAnyAssignment: boolean;
-  /** 譜面URL。sort_order 昇順。 */
-  scoreUrls: string[];
+  /** 譜面URL。任意の名前(未設定なら null)を伴う。sort_order 昇順。 */
+  scoreUrls: ScoreUrlNode[];
 }
 
 /**
@@ -297,7 +308,7 @@ export async function findSongContext(
       .where(eq(take.songId, songId))
       .limit(1),
     db
-      .select({ url: songScoreUrl.url })
+      .select({ url: songScoreUrl.url, label: songScoreUrl.label })
       .from(songScoreUrl)
       .where(eq(songScoreUrl.songId, songId))
       .orderBy(asc(songScoreUrl.sortOrder)),
@@ -313,7 +324,7 @@ export async function findSongContext(
     notes: row.notes,
     proposedBy: row.proposedBy,
     hasAnyAssignment: assignmentRows.length > 0,
-    scoreUrls: scoreUrlRows.map((r) => r.url),
+    scoreUrls: scoreUrlRows.map((r) => ({ url: r.url, label: r.label })),
   };
 }
 
@@ -323,8 +334,11 @@ export interface UpdateSongInput {
   refUrl: string;
   songKey: string;
   notes: string;
-  /** 譜面URL。全削除→再挿入するため、編集後の全件をこの順で渡す。 */
-  scoreUrls: readonly string[];
+  /**
+   * 譜面URLと任意の名前。全削除→再挿入するため、編集後の全件をこの順で渡す。
+   * `label` が `""` なら名前なしとして `null` で保存する。
+   */
+  scoreUrls: readonly ScoreUrlInput[];
   now: number;
 }
 
@@ -333,8 +347,9 @@ export interface UpdateSongInput {
  * 枠構成は対象外。
  *
  * 譜面URLは差分更新ではなく全削除→再挿入する。理由:
- * - 譜面URLには識別子になるものが無い(ラベル無し・URL文字列だけ)。
- *   並べ替えは正当な編集操作なので、行の同一性を決める手段がない。
+ * - 譜面URLには識別子になるものが無い。名前が付いても行の識別子にはならない
+ *   (同じ名前・同じURLを複数行書けるし、名前は任意)。加えて並べ替えで全行の
+ *   sort_order が動くため、差分更新にしても書き込む行数はほぼ変わらない。
  * - 1曲あたり最大10行しかなく、全消し・全入れのコストは無視できる。
  * - db.batch は D1 の暗黙トランザクションなので、「0件の瞬間」が他の
  *   リクエストから見えることはない。
@@ -349,10 +364,11 @@ export async function updateSong(
   songId: string,
   input: UpdateSongInput,
 ): Promise<void> {
-  const scoreUrlValues = input.scoreUrls.map((url, index) => ({
+  const scoreUrlValues = input.scoreUrls.map((row, index) => ({
     id: newId(),
     songId,
-    url,
+    url: row.url,
+    label: row.label === "" ? null : row.label,
     sortOrder: index + 1,
     createdAt: input.now,
   }));

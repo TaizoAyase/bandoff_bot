@@ -1,3 +1,4 @@
+import type { ScoreUrlInput } from "../../domain/score-urls";
 import { LIMITS, type SongFormInput } from "../../domain/validation";
 import { FieldError } from "../components/field-error";
 import { ScoreUrlFields } from "../components/score-url-fields";
@@ -7,7 +8,7 @@ export interface SongEditPageProps {
   slug: string;
   songId: string;
   values: SongFormInput;
-  scoreUrls: readonly string[];
+  scoreUrls: readonly ScoreUrlInput[];
   errors: Record<string, string>;
 }
 

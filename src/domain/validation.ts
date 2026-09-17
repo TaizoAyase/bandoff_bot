@@ -4,6 +4,7 @@
  */
 
 import { DURATION_MINUTES_OPTIONS } from "./duration";
+import type { ScoreUrlInput } from "./score-urls";
 import { STARTS_TIME_OPTIONS } from "./starts-time";
 import { parseJstDateTimeLocal } from "./time";
 
@@ -23,6 +24,8 @@ export const LIMITS = {
   REF_URL_MAX: 500,
   /** 譜面URL1本の文字数上限。参考URLと同じ長さに揃える。 */
   SCORE_URL_MAX: 500,
+  /** 譜面URL1本に付ける名前の文字数上限。曲カードに横並びで出るので短くする。 */
+  SCORE_URL_LABEL_MAX: 20,
   SONG_KEY_MAX: 20,
   NOTES_MAX: 500,
   JOIN_CODE_MIN: 1,
@@ -547,21 +550,60 @@ export function validateSongSlots(
 }
 
 /**
- * 曲の譜面URL(複数)を検証する。空行は無視し、ラベルを持たないため
- * 同じURLが複数行あっても情報が増えない。trim後の完全一致で先勝ち除去する
- * (`new URL()` による正規化はせず、ユーザーの入力を黙って書き換えない)。
- * 任意項目なので0件も許可する。
+ * 曲の譜面URL(複数)とその任意の名前を検証する。空行は無視し、任意項目
+ * なので0件も許可する。
+ *
+ * URLの配列と名前の配列を別々に受け取らず、ペア済みの配列
+ * (`ScoreUrlInput[]`)を受け取るのは行のずれを構造的に防ぐため。生の2配列を
+ * 受け取ると、それぞれを `filter` で詰めた瞬間に n 番目同士の対応が崩れる
+ * (片方だけ空行が落ちる)。組にしてから渡す形なら、以降どう絞り込んでも
+ * URL と名前が離れようがない。組にする責務は `zipScoreUrlRows` の1箇所に閉じる。
+ *
+ * 重複除去は **`(url, label)` の組の完全一致** でのみ行う(先勝ち)。以前は
+ * 「ラベルを持たないため同じURLが複数行あっても情報が増えない」を根拠に URL
+ * 単独で除去していたが、名前を持てるようになった今は同じURLに別の名前を付ける
+ * のが意味のある入力(例: 1つのPDFに「ギター」と「ベース」の2行)なので、
+ * 組が完全に一致する行だけを落とす。`new URL()` による正規化をせず、
+ * ユーザーの入力を黙って書き換えないのは従来どおり。
+ *
+ * エラーは view 側(`<FieldError message={errors.scoreUrls} />`)に合わせて
+ * すべて `scoreUrls` の1キーに集約する。
  */
-export function validateScoreUrls(rawUrls: string[]): ValidationResult<string[]> {
-  const trimmed = rawUrls.map((v) => v.trim()).filter((v) => v !== "");
+export function validateScoreUrls(
+  rows: readonly ScoreUrlInput[],
+): ValidationResult<ScoreUrlInput[]> {
+  // url は既存のURL項目と揃えて trim のみ(`stripControlChars` は通さない)。
+  // label は `<input type="text">` 由来の単一行フィールドなので、
+  // `validateSlotNote` 等と同じく `stripControlChars` を通してから trim する。
+  const normalized = rows.map((row) => ({
+    url: row.url.trim(),
+    label: stripControlChars(row.label).trim(),
+  }));
 
-  const deduped: string[] = [];
-  for (const url of trimmed) {
-    if (!deduped.includes(url)) {
-      deduped.push(url);
+  if (normalized.some((row) => row.url === "" && row.label !== "")) {
+    return {
+      ok: false,
+      errors: { scoreUrls: "名前を入力した行には譜面URLも入力してください" },
+    };
+  }
+
+  // url が空の行を落とす。この時点で名前も空であることは上で確認済みなので、
+  // フォームの起点の空行(両方空)だけが黙って消える。
+  const filled = normalized.filter((row) => row.url !== "");
+
+  const deduped: ScoreUrlInput[] = [];
+  for (const row of filled) {
+    const duplicated = deduped.some(
+      (kept) => kept.url === row.url && kept.label === row.label,
+    );
+    if (!duplicated) {
+      deduped.push(row);
     }
   }
 
+  // 件数上限は重複除去後の件数で数える。各行の中身の検証より前に置くのは、
+  // 11行送ったときに「10件までです」を先に返すため(1行目が不正URLでも
+  // 件数超過の方を優先する)。
   if (deduped.length > LIMITS.MAX_SCORE_URLS_PER_SONG) {
     return {
       ok: false,
@@ -571,10 +613,18 @@ export function validateScoreUrls(rawUrls: string[]): ValidationResult<string[]>
     };
   }
 
-  for (const url of deduped) {
-    const result = httpUrl(url, LIMITS.SCORE_URL_MAX, "譜面URL");
-    if (!result.ok) {
-      return { ok: false, errors: { scoreUrls: result.error } };
+  for (const row of deduped) {
+    const urlResult = httpUrl(row.url, LIMITS.SCORE_URL_MAX, "譜面URL");
+    if (!urlResult.ok) {
+      return { ok: false, errors: { scoreUrls: urlResult.error } };
+    }
+    const labelResult = optionalText(
+      row.label,
+      LIMITS.SCORE_URL_LABEL_MAX,
+      "譜面の名前",
+    );
+    if (!labelResult.ok) {
+      return { ok: false, errors: { scoreUrls: labelResult.error } };
     }
   }
 

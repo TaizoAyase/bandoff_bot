@@ -603,6 +603,243 @@ describe("曲一覧の表示に譜面URLが出る", () => {
   });
 });
 
+describe("譜面URLの名前", () => {
+  it("saves the label alongside the URL when one is given", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "名前付き登録",
+      scoreUrls: ["https://example.com/a", "https://example.com/b"],
+      scoreUrlLabels: ["ギター", "ベース"],
+    });
+    const songId = extractSongId(response);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId))
+      .orderBy(asc(songScoreUrl.sortOrder));
+    expect(rows.map((r) => [r.url, r.label])).toEqual([
+      ["https://example.com/a", "ギター"],
+      ["https://example.com/b", "ベース"],
+    ]);
+  });
+
+  it("stores null (not an empty string) when the label is left blank", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "名前なし登録",
+      scoreUrls: ["https://example.com/a"],
+    });
+    const songId = extractSongId(response);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.label).toBeNull();
+  });
+
+  it("lets an edit change only the label", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "名前だけ編集",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: ["ギター"],
+    });
+    const songId = extractSongId(response);
+
+    const editResponse = await editSong(setup.client, setup.slug, songId, {
+      title: "名前だけ編集",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: ["ベース"],
+    });
+    expect(editResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows.map((r) => [r.url, r.label])).toEqual([
+      ["https://example.com/a", "ベース"],
+    ]);
+  });
+
+  it("shows an existing label as an input value on the edit form", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "名前を編集画面に出す",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: ["ギター"],
+    });
+    const songId = extractSongId(response);
+
+    const getResponse = await setup.client.get(`/e/${setup.slug}/songs/${songId}/edit`);
+    const html = await getResponse.text();
+    expect(html).toContain('value="https://example.com/a"');
+    expect(html).toContain('value="ギター"');
+  });
+
+  it("clears the label back to null when the name is emptied on edit", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "名前を消す編集",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: ["ギター"],
+    });
+    const songId = extractSongId(response);
+
+    const editResponse = await editSong(setup.client, setup.slug, songId, {
+      title: "名前を消す編集",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: [""],
+    });
+    expect(editResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.label).toBeNull();
+  });
+
+  it("saves a single labeled row sent as one value (not an array)", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "1行だけ名前付き",
+    });
+    const songId = extractSongId(response);
+
+    // Record で送ると同名キーが1つずつになり、Hono は配列ではなく
+    // 単一文字列を返す。この経路でも名前が保存されることを確認する。
+    const editResponse = await setup.client.post(`/e/${setup.slug}/songs/${songId}`, {
+      title: "1行だけ名前付き",
+      artist: "",
+      refUrl: "",
+      songKey: "",
+      notes: "",
+      scoreUrl: "https://example.com/single",
+      scoreUrlLabel: "ギター",
+    });
+    expect(editResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId));
+    expect(rows.map((r) => [r.url, r.label])).toEqual([
+      ["https://example.com/single", "ギター"],
+    ]);
+  });
+
+  // 以下2本は手で組んだ壊れた POST(2つのフィールドの件数が食い違う)への
+  // 耐性。ヘルパは常に行ごとに両方送るため、ここでは URLSearchParams を直接組む。
+  it("accepts a POST with 2 scoreUrl and only 1 scoreUrlLabel (no 500)", async () => {
+    const setup = await createEventWithParticipant();
+    const params = new URLSearchParams();
+    params.set("title", "件数不一致POST");
+    params.set("artist", "");
+    params.set("refUrl", "");
+    params.set("songKey", "");
+    params.set("notes", "");
+    params.append("instrument", "Gt");
+    params.append("scoreUrl", "https://example.com/a");
+    params.append("scoreUrlLabel", "ギター");
+    params.append("scoreUrl", "https://example.com/b");
+
+    const response = await setup.client.post(`/e/${setup.slug}/songs`, params);
+    expect(response.status).toBe(303);
+    const songId = extractSongId(response);
+
+    const db = createDb(env.DB);
+    const rows = await db
+      .select()
+      .from(songScoreUrl)
+      .where(eq(songScoreUrl.songId, songId))
+      .orderBy(asc(songScoreUrl.sortOrder));
+    expect(rows.map((r) => [r.url, r.label])).toEqual([
+      ["https://example.com/a", "ギター"],
+      ["https://example.com/b", null],
+    ]);
+  });
+
+  it("rejects a POST that sends only scoreUrlLabel", async () => {
+    const setup = await createEventWithParticipant();
+    const params = new URLSearchParams();
+    params.set("title", "名前だけPOST");
+    params.set("artist", "");
+    params.set("refUrl", "");
+    params.set("songKey", "");
+    params.set("notes", "");
+    params.append("instrument", "Gt");
+    params.append("scoreUrlLabel", "ギター");
+    params.append("scoreUrlLabel", "ベース");
+
+    const response = await setup.client.post(`/e/${setup.slug}/songs`, params);
+    expect(response.status).toBe(400);
+    const html = await response.text();
+    expect(html).toContain("名前を入力した行には譜面URLも入力してください");
+
+    const db = createDb(env.DB);
+    const rows = await db.select().from(song).where(eq(song.title, "名前だけPOST"));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("keeps the card numbering (譜面1) when no label is given", async () => {
+    const setup = await createEventWithParticipant();
+    await createSong(setup.client, setup.slug, {
+      title: "名前なし後方互換",
+      scoreUrls: ["https://example.com/a"],
+    });
+
+    const response = await setup.client.get(`/e/${setup.slug}/`);
+    const html = await response.text();
+    expect(html).toContain(">譜面1<");
+  });
+
+  it("shows the label instead of 譜面N on the song card", async () => {
+    const setup = await createEventWithParticipant();
+    await createSong(setup.client, setup.slug, {
+      title: "名前をカードに出す",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: ["ギター"],
+    });
+
+    const response = await setup.client.get(`/e/${setup.slug}/`);
+    const html = await response.text();
+    expect(html).toContain(">ギター<");
+    expect(html).not.toContain(">譜面1<");
+    // 名前付きのリンクにも rel="noreferrer" が付いていること。
+    expect(html).toContain('rel="noreferrer">ギター<');
+  });
+
+  it("skips the number of a labeled row when labels are mixed in", async () => {
+    const setup = await createEventWithParticipant();
+    await createSong(setup.client, setup.slug, {
+      title: "名前の有無が混在",
+      scoreUrls: [
+        "https://example.com/a",
+        "https://example.com/b",
+        "https://example.com/c",
+      ],
+      scoreUrlLabels: ["", "ギター", ""],
+    });
+
+    const response = await setup.client.get(`/e/${setup.slug}/`);
+    const html = await response.text();
+    expect(html).toContain(">譜面1<");
+    expect(html).toContain(">ギター<");
+    expect(html).toContain(">譜面3<");
+    expect(html).not.toContain(">譜面2<");
+  });
+});
+
 /** イベント B の song_id を、イベント A の cookie で叩いたときの eventId 照合を確認する。 */
 async function setupCrossEventSongs() {
   const eventA = await createEventWithParticipant();

@@ -219,16 +219,25 @@ textarea {
   padding: 0;
 }
 
-/* 曲登録・編集フォームの譜面URL行 */
+/* 曲登録・編集フォームの譜面URL行。URL欄と名前欄の2つを横に並べる。
+   狭い画面では名前欄が下に折り返る。min-width: 0 が無いと input の
+   既定の最小幅で flex が縮まず、行がはみ出す。 */
 .score-url-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
 
-.score-url-row input {
-  flex: 1;
+.score-url-row input[name="scoreUrl"] {
+  flex: 3 1 14em;
+  min-width: 0;
+}
+
+.score-url-row input[name="scoreUrlLabel"] {
+  flex: 1 1 7em;
+  min-width: 0;
 }
 
 /* 曲カードのヘッダ・下部アクション */

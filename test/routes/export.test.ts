@@ -79,10 +79,32 @@ describe("GET /e/:slug/export.json", () => {
     const songId = extractSongId(songResponse);
     const response = await created.client.get(`/e/${created.slug}/export.json`);
     const data = (await response.json()) as {
-      songs: { id: string; scoreUrls: string[] }[];
+      songs: { id: string; scoreUrls: { url: string; label: string | null }[] }[];
     };
     const song = data.songs.find((s) => s.id === songId);
-    expect(song?.scoreUrls).toEqual(["https://example.com/a", "https://example.com/b"]);
+    expect(song?.scoreUrls).toEqual([
+      { url: "https://example.com/a", label: null },
+      { url: "https://example.com/b", label: null },
+    ]);
+  });
+
+  it("includes the score url label, or null when the row has no name", async () => {
+    const created = await createEvent();
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "譜面の名前確認曲",
+      scoreUrls: ["https://example.com/a", "https://example.com/b"],
+      scoreUrlLabels: ["ギター", ""],
+    });
+    const songId = extractSongId(songResponse);
+    const response = await created.client.get(`/e/${created.slug}/export.json`);
+    const data = (await response.json()) as {
+      songs: { id: string; scoreUrls: { url: string; label: string | null }[] }[];
+    };
+    const song = data.songs.find((s) => s.id === songId);
+    expect(song?.scoreUrls).toEqual([
+      { url: "https://example.com/a", label: "ギター" },
+      { url: "https://example.com/b", label: null },
+    ]);
   });
 
   it("includes durationMinutes in the event data", async () => {

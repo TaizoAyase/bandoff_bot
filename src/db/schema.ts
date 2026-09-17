@@ -144,7 +144,9 @@ export const song = sqliteTable(
 );
 
 /**
- * 曲に紐づく譜面のURL。1曲に複数登録でき、ラベルは持たず並び順だけを持つ。
+ * 曲に紐づく譜面のURL。1曲に複数登録でき、任意の名前(`label`)と並び順を持つ。
+ * `label` が `null` または空のときは、曲カードに `譜面1` のような通し番号で出す。
+ * 空文字は保存せず `null` に寄せる(`song.artist` 等と同じ流儀)。
  * 曲そのものの参考音源・動画を指す `song.ref_url`(単一・任意)とは別項目で、
  * あちらは残したまま並存させる。
  */
@@ -156,6 +158,7 @@ export const songScoreUrl = sqliteTable(
       .notNull()
       .references(() => song.id, { onDelete: "cascade" }),
     url: text("url").notNull(),
+    label: text("label"),
     sortOrder: integer("sort_order").notNull(),
     createdAt: integer("created_at").notNull(),
   },

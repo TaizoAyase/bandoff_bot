@@ -31,6 +31,27 @@ export function formStringArray(value: FormValue): string[] {
 }
 
 /**
+ * `formStringArray` と同じだが、`File` を取り除かず空文字列に潰して
+ * **要素数を保つ**。譜面URLと譜面の名前のように、同名フィールド2本を
+ * 位置(n番目同士)で組にする入力に使う。取り除いてしまうと、その行以降の
+ * 対応が1つずつずれる。
+ *
+ * ただし配列でない単一の `File` が来たときだけは `[""]`(1要素)ではなく
+ * `[]`(0要素)になる。実害は無い: 欠けるのは常に index 0 の1件だけで、
+ * `zipScoreUrlRows` が短い側を末尾に `""` を足して揃えた結果と一致するため、
+ * 行のずれは起きない。
+ */
+export function formStringArrayPositional(value: FormValue): string[] {
+  if (Array.isArray(value)) {
+    return value.map((v) => (typeof v === "string" ? v : ""));
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  return [];
+}
+
+/**
  * `c.req.json()` で受けた本文(`unknown`)から `{ token: string }` の
  * `token` を取り出す。`/session/rebind` と `/e/:slug/discord`(計画5-3)の
  * 両方で使う。無い・空文字・型違いなら `null`。

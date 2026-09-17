@@ -148,8 +148,13 @@ describe("buildSongEditedContent", () => {
   it("譜面URLが増えたときは値を出さず「変更しました」だけになる", () => {
     const content = buildSongEditedContent(
       makeSongEditedInput(
-        { scoreUrls: ["https://example.com/a"] },
-        { scoreUrls: ["https://example.com/a", "https://example.com/b"] },
+        { scoreUrls: [{ url: "https://example.com/a", label: "" }] },
+        {
+          scoreUrls: [
+            { url: "https://example.com/a", label: "" },
+            { url: "https://example.com/b", label: "" },
+          ],
+        },
       ),
     );
     expect(content).toContain("- 譜面URLを変更しました");
@@ -159,8 +164,13 @@ describe("buildSongEditedContent", () => {
   it("譜面URLが減ったときは値を出さず「変更しました」だけになる", () => {
     const content = buildSongEditedContent(
       makeSongEditedInput(
-        { scoreUrls: ["https://example.com/a", "https://example.com/b"] },
-        { scoreUrls: ["https://example.com/a"] },
+        {
+          scoreUrls: [
+            { url: "https://example.com/a", label: "" },
+            { url: "https://example.com/b", label: "" },
+          ],
+        },
+        { scoreUrls: [{ url: "https://example.com/a", label: "" }] },
       ),
     );
     expect(content).toContain("- 譜面URLを変更しました");
@@ -170,19 +180,59 @@ describe("buildSongEditedContent", () => {
   it("譜面URLが同じ集合でも並び順だけ違えば変更ありになる", () => {
     const content = buildSongEditedContent(
       makeSongEditedInput(
-        { scoreUrls: ["https://example.com/a", "https://example.com/b"] },
-        { scoreUrls: ["https://example.com/b", "https://example.com/a"] },
+        {
+          scoreUrls: [
+            { url: "https://example.com/a", label: "" },
+            { url: "https://example.com/b", label: "" },
+          ],
+        },
+        {
+          scoreUrls: [
+            { url: "https://example.com/b", label: "" },
+            { url: "https://example.com/a", label: "" },
+          ],
+        },
       ),
     );
     expect(content).toContain("- 譜面URLを変更しました");
   });
 
   it("譜面URLが before・after で同一なら行が出ない", () => {
-    const urls = ["https://example.com/a", "https://example.com/b"];
+    const scoreUrls = [
+      { url: "https://example.com/a", label: "" },
+      { url: "https://example.com/b", label: "" },
+    ];
     const content = buildSongEditedContent(
       makeSongEditedInput(
-        { scoreUrls: urls, title: "旧曲名" },
-        { scoreUrls: urls, title: "新曲名" },
+        { scoreUrls, title: "旧曲名" },
+        { scoreUrls, title: "新曲名" },
+      ),
+    );
+    expect(content).not.toContain("譜面URL");
+  });
+
+  it("譜面URLが同じで名前だけ違えば変更ありになる", () => {
+    const content = buildSongEditedContent(
+      makeSongEditedInput(
+        { scoreUrls: [{ url: "https://example.com/a", label: "" }] },
+        { scoreUrls: [{ url: "https://example.com/a", label: "ギター" }] },
+      ),
+    );
+    expect(content).toContain("- 譜面URLを変更しました");
+    expect(content).not.toContain("ギター");
+  });
+
+  it("譜面URLも名前も同じなら行が出ない", () => {
+    const content = buildSongEditedContent(
+      makeSongEditedInput(
+        {
+          scoreUrls: [{ url: "https://example.com/a", label: "ギター" }],
+          title: "旧曲名",
+        },
+        {
+          scoreUrls: [{ url: "https://example.com/a", label: "ギター" }],
+          title: "新曲名",
+        },
       ),
     );
     expect(content).not.toContain("譜面URL");
