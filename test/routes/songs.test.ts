@@ -249,7 +249,7 @@ describe("曲の編集(GET/POST /e/:slug/songs/:id/edit, /e/:slug/songs/:id)", (
     expect(rows[0]?.title).toBe("編集後");
   });
 
-  it("forbids someone else's edit attempt", async () => {
+  it("allows another registered participant to edit someone else's song", async () => {
     const setup = await createEventWithParticipant();
     const response = await createSong(setup.client, setup.slug, { title: "他人の曲" });
     const songId = extractSongId(response);
@@ -258,9 +258,33 @@ describe("曲の編集(GET/POST /e/:slug/songs/:id/edit, /e/:slug/songs/:id)", (
     await registerParticipant(other, setup.slug, { displayName: "別の人" });
 
     const getResponse = await other.get(`/e/${setup.slug}/songs/${songId}/edit`);
-    expect(getResponse.status).toBe(403);
+    expect(getResponse.status).toBe(200);
 
     const postResponse = await other.post(`/e/${setup.slug}/songs/${songId}`, {
+      title: "別の参加者が編集",
+      artist: "",
+      refUrl: "",
+      songKey: "",
+      notes: "",
+    });
+    expect(postResponse.status).toBe(303);
+
+    const db = createDb(env.DB);
+    const rows = await db.select().from(song).where(eq(song.id, songId));
+    expect(rows[0]?.title).toBe("別の参加者が編集");
+  });
+
+  it("forbids an unregistered viewer's edit attempt", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, { title: "他人の曲" });
+    const songId = extractSongId(response);
+
+    const viewerOnly = await joinAsViewer(setup.slug, setup.joinCode);
+
+    const getResponse = await viewerOnly.get(`/e/${setup.slug}/songs/${songId}/edit`);
+    expect(getResponse.status).toBe(403);
+
+    const postResponse = await viewerOnly.post(`/e/${setup.slug}/songs/${songId}`, {
       title: "改ざん",
       artist: "",
       refUrl: "",
@@ -272,6 +296,36 @@ describe("曲の編集(GET/POST /e/:slug/songs/:id/edit, /e/:slug/songs/:id)", (
     const db = createDb(env.DB);
     const rows = await db.select().from(song).where(eq(song.id, songId));
     expect(rows[0]?.title).toBe("他人の曲");
+  });
+
+  it("shows the edit link on the song card to another registered participant", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "誰でも編集できる曲",
+    });
+    const songId = extractSongId(response);
+
+    const other = await joinAsViewer(setup.slug, setup.joinCode);
+    await registerParticipant(other, setup.slug, { displayName: "別の人" });
+
+    const listResponse = await other.get(`/e/${setup.slug}/`);
+    const html = await listResponse.text();
+    expect(html).toContain(`href="/e/${setup.slug}/songs/${songId}/edit"`);
+  });
+
+  it("hides the edit link from an unregistered viewer", async () => {
+    const setup = await createEventWithParticipant();
+    const response = await createSong(setup.client, setup.slug, {
+      title: "未登録者には編集リンクなし",
+    });
+    const songId = extractSongId(response);
+
+    const viewerOnly = await joinAsViewer(setup.slug, setup.joinCode);
+
+    const listResponse = await viewerOnly.get(`/e/${setup.slug}/`);
+    const html = await listResponse.text();
+    expect(html).not.toContain(`href="/e/${setup.slug}/songs/${songId}/edit"`);
+    expect(html).toContain("未登録者には編集リンクなし");
   });
 
   it("allows the organizer to edit someone else's song", async () => {

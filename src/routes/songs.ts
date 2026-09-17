@@ -176,8 +176,9 @@ songsApp.get("/songs/:id/edit", requireViewer, async (c) => {
   if (!context || context.eventId !== event.id) {
     return notFoundResponse(c);
   }
-  if (!canEditSong(actorFromViewer(viewer), { proposedBy: context.proposedBy }).ok) {
-    return errorResponse(c, 403, "曲を登録した本人か主催者のみ編集できます");
+  const permission = canEditSong(actorFromViewer(viewer));
+  if (!permission.ok) {
+    return errorResponse(c, 403, permission.message);
   }
   return renderPage(
     c,
@@ -209,9 +210,7 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
   if (!context || context.eventId !== event.id) {
     return notFoundResponse(c);
   }
-  const permission = canEditSong(actorFromViewer(viewer), {
-    proposedBy: context.proposedBy,
-  });
+  const permission = canEditSong(actorFromViewer(viewer));
   if (!permission.ok) {
     return errorResponse(c, 403, permission.message);
   }
