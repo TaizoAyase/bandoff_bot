@@ -23,6 +23,8 @@ export const LIMITS = {
   REF_URL_MAX: 500,
   /** 譜面URL1本の文字数上限。参考URLと同じ長さに揃える。 */
   SCORE_URL_MAX: 500,
+  /** 譜面URL1本に付ける名前の文字数上限。曲カードに横並びで出るので短くする。 */
+  SCORE_URL_LABEL_MAX: 20,
   SONG_KEY_MAX: 20,
   NOTES_MAX: 500,
   JOIN_CODE_MIN: 1,
