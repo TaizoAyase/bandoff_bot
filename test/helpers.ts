@@ -320,6 +320,12 @@ export interface CreateSongOptions {
   instruments?: string[];
   /** 譜面URL。省略時は0件(既存テストへの影響なし)。 */
   scoreUrls?: string[];
+  /**
+   * 譜面の名前。`scoreUrls` と同じ位置の要素が同じ行になる。省略した位置は
+   * 名前なし(空文字)として送る。`scoreUrls` より長い場合も余りを捨てずに
+   * 送るので、「URLが空で名前だけある行」になりサーバーは 400 を返す。
+   */
+  scoreUrlLabels?: string[];
   /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
   useBrowserForm?: boolean;
 }
@@ -340,8 +346,21 @@ export async function createSong(
   for (const instrument of instruments) {
     params.append("instrument", instrument);
   }
-  for (const url of options.scoreUrls ?? []) {
-    params.append("scoreUrl", url);
+  // 行ごとに scoreUrl → scoreUrlLabel の順で交互に append する。実ブラウザの
+  // フォーム送信は送信可能な要素を tree order で走査するので、1行分の2欄が
+  // 隣り合ってワイヤに乗る。サーバー側はキーごとに位置で組にするため結果は
+  // 変わらないが、テストが本物と違う形を送っているとずれの検出力が落ちる。
+  // どちらも省略されたときはどちらのフィールドも一切送らない(v0.4.1 と
+  // 同じ「scoreUrl を持たない POST」を再現する)。長さが食い違うときは長い方に
+  // 合わせて短い側を `""` で埋める。余りを黙って捨てるより、実際にワイヤに乗る
+  // 形がテストから読める方がよい(名前だけが長ければ「URLが空で名前だけある行」
+  // を送ることになり、サーバーが 400 を返す — それがこのヘルパの正しい挙動)。
+  const scoreUrls = options.scoreUrls ?? [];
+  const scoreUrlLabels = options.scoreUrlLabels ?? [];
+  const rowCount = Math.max(scoreUrls.length, scoreUrlLabels.length);
+  for (let i = 0; i < rowCount; i += 1) {
+    params.append("scoreUrl", scoreUrls[i] ?? "");
+    params.append("scoreUrlLabel", scoreUrlLabels[i] ?? "");
   }
   const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
   return submit(`/e/${slug}/songs`, params);
@@ -358,6 +377,12 @@ export interface EditSongOptions {
    * 複数送れないため、複数件を送るにはこのヘルパの `URLSearchParams` 組み立てが必要。
    */
   scoreUrls?: string[];
+  /**
+   * 譜面の名前。`scoreUrls` と同じ位置の要素が同じ行になる。省略した位置は
+   * 名前なし(空文字)として送る。`scoreUrls` より長い場合も余りを捨てずに
+   * 送るので、「URLが空で名前だけある行」になりサーバーは 400 を返す。
+   */
+  scoreUrlLabels?: string[];
   /** true の場合、`postAsBrowserForm` でブラウザのフォーム送信を模す。 */
   useBrowserForm?: boolean;
 }
@@ -375,8 +400,21 @@ export function editSong(
   params.set("refUrl", options.refUrl ?? "");
   params.set("songKey", options.songKey ?? "");
   params.set("notes", options.notes ?? "");
-  for (const url of options.scoreUrls ?? []) {
-    params.append("scoreUrl", url);
+  // 行ごとに scoreUrl → scoreUrlLabel の順で交互に append する。実ブラウザの
+  // フォーム送信は送信可能な要素を tree order で走査するので、1行分の2欄が
+  // 隣り合ってワイヤに乗る。サーバー側はキーごとに位置で組にするため結果は
+  // 変わらないが、テストが本物と違う形を送っているとずれの検出力が落ちる。
+  // どちらも省略されたときはどちらのフィールドも一切送らない(v0.4.1 と
+  // 同じ「scoreUrl を持たない POST」を再現する)。長さが食い違うときは長い方に
+  // 合わせて短い側を `""` で埋める。余りを黙って捨てるより、実際にワイヤに乗る
+  // 形がテストから読める方がよい(名前だけが長ければ「URLが空で名前だけある行」
+  // を送ることになり、サーバーが 400 を返す — それがこのヘルパの正しい挙動)。
+  const scoreUrls = options.scoreUrls ?? [];
+  const scoreUrlLabels = options.scoreUrlLabels ?? [];
+  const rowCount = Math.max(scoreUrls.length, scoreUrlLabels.length);
+  for (let i = 0; i < rowCount; i += 1) {
+    params.append("scoreUrl", scoreUrls[i] ?? "");
+    params.append("scoreUrlLabel", scoreUrlLabels[i] ?? "");
   }
   const submit = options.useBrowserForm ? client.postAsBrowserForm : client.post;
   return submit(`/e/${slug}/songs/${songId}`, params);

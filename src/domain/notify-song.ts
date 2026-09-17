@@ -11,6 +11,7 @@ import {
   formatActor,
   truncate,
 } from "./notify-text";
+import type { ScoreUrlInput } from "./score-urls";
 
 export interface SongAddedInput {
   eventTitle: string;
@@ -43,8 +44,8 @@ export interface SongEditedFields {
   refUrl: string;
   songKey: string;
   notes: string;
-  /** 譜面URL。並び順(sort_order)を含めて比較する。 */
-  scoreUrls: readonly string[];
+  /** 譜面URL。並び順(sort_order)と名前を含めて比較する。 */
+  scoreUrls: readonly ScoreUrlInput[];
 }
 
 export interface SongEditedInput {
@@ -60,14 +61,20 @@ export interface SongEditedInput {
 
 /**
  * 譜面URLの集合が変わったか。並べ替えも利用者から見える変更なので
- * 「変更あり」として扱う(要素ごとの前後比較)。
+ * 「変更あり」として扱う(要素ごとの前後比較)。名前だけを変えた編集も
+ * 利用者から見れば変更なので、URL と名前の両方を比べる。
  */
 function scoreUrlsChanged(
-  before: readonly string[],
-  after: readonly string[],
+  before: readonly ScoreUrlInput[],
+  after: readonly ScoreUrlInput[],
 ): boolean {
   if (before.length !== after.length) return true;
-  return before.some((url, index) => url !== after[index]);
+  return before.some((row, index) => {
+    // 長さが一致することは上で確認済みなので `!other` は実際には起きないが、
+    // `noUncheckedIndexedAccess: true` のもとでは型として必要。
+    const other = after[index];
+    return !other || other.url !== row.url || other.label !== row.label;
+  });
 }
 
 /**

@@ -2,6 +2,7 @@ import type { ParticipantSummary } from "../../db/queries/participants";
 import type { SongNode } from "../../db/queries/songs";
 import { numberInstruments } from "../../domain/instruments";
 import { canDeleteSong, canDeleteTake, canEditSong } from "../../domain/permissions";
+import { buildScoreUrlLinks } from "../../domain/score-urls";
 import { SlotList } from "./slot-list";
 
 export interface SongCardProps {
@@ -58,11 +59,13 @@ export const SongCard = ({
       ) : null}
       {song.scoreUrls.length > 0 ? (
         <ul class="song-scores">
-          {song.scoreUrls.map((url, index) => (
+          {buildScoreUrlLinks(song.scoreUrls).map((link) => (
             <li>
               {/* rel="noreferrer" は必須。付け忘れると秘密の slug を含む URL が
                   Referer として外部サイトに渡る(参考リンクと同じ理由)。 */}
-              <a href={url} rel="noreferrer">{`譜面${index + 1}`}</a>
+              <a href={link.url} rel="noreferrer">
+                {link.text}
+              </a>
             </li>
           ))}
         </ul>

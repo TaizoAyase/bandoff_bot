@@ -23,6 +23,7 @@ import {
   canJoinAs,
   canLeave,
 } from "../domain/permissions";
+import { toScoreUrlInputs, zipScoreUrlRows } from "../domain/score-urls";
 import {
   LIMITS,
   validateScoreUrls,
@@ -44,7 +45,7 @@ import { emptySongFormValues, SongFormPage } from "../views/pages/song-form";
 import { TakenPage } from "../views/pages/taken";
 import { renderPage } from "../views/render";
 import { actorFromViewer } from "./actor";
-import { formString, formStringArray } from "./form";
+import { formString, formStringArray, formStringArrayPositional } from "./form";
 
 /** 曲登録と、枠へのエントリー・辞退。 */
 export const songsApp = new Hono<AppEnv>({ strict: false });
@@ -107,6 +108,14 @@ songsApp.post(
       );
     }
 
+    // 同名フィールドが複数来るパート構成(instrument)と譜面URL(scoreUrl)・
+    // 譜面の名前(scoreUrlLabel)を拾うため { all: true } が必須。付け忘れると
+    // 同名フィールドは最後の1件だけが残り、枠も譜面URLも黙って1件しか登録
+    // されなくなる(formString は配列が来ても先頭を取るだけなので、他フィールド
+    // への影響はない)。
+    // さらに scoreUrl と scoreUrlLabel は行ごとに必ず両方送られる前提で、
+    // n番目同士を同じ行として位置合わせしている(フォーム側は常に両方の
+    // <input> をレンダリングする。src/views/components/score-url-fields.tsx 参照)。
     const body = await c.req.parseBody({ all: true });
     const input = {
       title: formString(body.title),
@@ -116,11 +125,14 @@ songsApp.post(
       notes: formString(body.notes),
     };
     const rawInstruments = formStringArray(body.instrument);
-    const rawScoreUrls = formStringArray(body.scoreUrl);
+    const rawScoreUrlRows = zipScoreUrlRows(
+      formStringArrayPositional(body.scoreUrl),
+      formStringArrayPositional(body.scoreUrlLabel),
+    );
 
     const formResult = validateSongForm(input);
     const slotsResult = validateSongSlots(rawInstruments);
-    const scoreUrlsResult = validateScoreUrls(rawScoreUrls);
+    const scoreUrlsResult = validateScoreUrls(rawScoreUrlRows);
 
     if (!formResult.ok || !slotsResult.ok || !scoreUrlsResult.ok) {
       const errors: Record<string, string> = {
@@ -134,7 +146,7 @@ songsApp.post(
           slug: event.slug,
           values: input,
           instruments: rawInstruments.length > 0 ? rawInstruments : DEFAULT_SLOTS,
-          scoreUrls: rawScoreUrls,
+          scoreUrls: rawScoreUrlRows,
           errors,
         }),
         400,
@@ -202,7 +214,7 @@ songsApp.get(
           songKey: context.songKey ?? "",
           notes: context.notes ?? "",
         },
-        scoreUrls: context.scoreUrls,
+        scoreUrls: toScoreUrlInputs(context.scoreUrls),
         errors: {},
       }),
     );
@@ -226,9 +238,13 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
     return errorResponse(c, 403, permission.message);
   }
 
-  // 同名フィールドが複数来る譜面URLを拾うため { all: true } が必須。付け忘れると
-  // 同名フィールドは最後の1件だけが残り、譜面URLが黙って1本しか保存されなくなる
-  // (formString は配列が来ても先頭を取るだけなので、他フィールドへの影響はない)。
+  // 同名フィールドが複数来る譜面URL(scoreUrl)と譜面の名前(scoreUrlLabel)を
+  // 拾うため { all: true } が必須。付け忘れると同名フィールドは最後の1件だけが
+  // 残り、譜面URLが黙って1本しか保存されなくなる(formString は配列が来ても
+  // 先頭を取るだけなので、他フィールドへの影響はない)。
+  // さらにこの2つは行ごとに必ず両方送られる前提で、n番目同士を同じ行として
+  // 位置合わせしている(フォーム側は常に両方の <input> をレンダリングする。
+  // src/views/components/score-url-fields.tsx 参照)。
   const body = await c.req.parseBody({ all: true });
   const input = {
     title: formString(body.title),
@@ -237,9 +253,12 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
     songKey: formString(body.songKey),
     notes: formString(body.notes),
   };
-  const rawScoreUrls = formStringArray(body.scoreUrl);
+  const rawScoreUrlRows = zipScoreUrlRows(
+    formStringArrayPositional(body.scoreUrl),
+    formStringArrayPositional(body.scoreUrlLabel),
+  );
   const result = validateSongForm(input);
-  const scoreUrlsResult = validateScoreUrls(rawScoreUrls);
+  const scoreUrlsResult = validateScoreUrls(rawScoreUrlRows);
   if (!result.ok || !scoreUrlsResult.ok) {
     const errors: Record<string, string> = {
       ...(result.ok ? {} : result.errors),
@@ -251,7 +270,7 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
         slug: event.slug,
         songId,
         values: input,
-        scoreUrls: rawScoreUrls,
+        scoreUrls: rawScoreUrlRows,
         errors,
       }),
       400,
@@ -266,7 +285,7 @@ songsApp.post("/songs/:id", requireViewer, requireOpenForParticipants, async (c)
     refUrl: context.refUrl ?? "",
     songKey: context.songKey ?? "",
     notes: context.notes ?? "",
-    scoreUrls: context.scoreUrls,
+    scoreUrls: toScoreUrlInputs(context.scoreUrls),
   };
   const after = { ...result.value, scoreUrls: scoreUrlsResult.value };
 

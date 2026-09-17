@@ -1,4 +1,5 @@
 import { PRESET_INSTRUMENTS } from "../../domain/instruments";
+import type { ScoreUrlInput } from "../../domain/score-urls";
 import { LIMITS, type SongFormInput } from "../../domain/validation";
 import { FieldError } from "../components/field-error";
 import { ScoreUrlFields } from "../components/score-url-fields";
@@ -9,8 +10,8 @@ export interface SongFormPageProps {
   values: SongFormInput;
   /** パート構成(初期値は DEFAULT_SLOTS)。 */
   instruments: readonly string[];
-  /** 譜面URL(初期値は空)。 */
-  scoreUrls: readonly string[];
+  /** 譜面URLとその任意の名前(初期値は空)。 */
+  scoreUrls: readonly ScoreUrlInput[];
   errors: Record<string, string>;
 }
 

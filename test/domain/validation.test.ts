@@ -378,33 +378,45 @@ describe("validateScoreUrls", () => {
   });
 
   it("ignores blank and whitespace-only rows", () => {
-    expect(validateScoreUrls(["https://example.com/a", "", "  "])).toEqual({
+    expect(
+      validateScoreUrls([
+        { url: "https://example.com/a", label: "" },
+        { url: "", label: "" },
+        { url: "  ", label: "  " },
+      ]),
+    ).toEqual({
       ok: true,
-      value: ["https://example.com/a"],
+      value: [{ url: "https://example.com/a", label: "" }],
     });
   });
 
   it("accepts http and https URLs and preserves input order", () => {
-    const result = validateScoreUrls(["https://example.com/b", "http://example.com/a"]);
+    const result = validateScoreUrls([
+      { url: "https://example.com/b", label: "" },
+      { url: "http://example.com/a", label: "" },
+    ]);
     expect(result).toEqual({
       ok: true,
-      value: ["https://example.com/b", "http://example.com/a"],
+      value: [
+        { url: "https://example.com/b", label: "" },
+        { url: "http://example.com/a", label: "" },
+      ],
     });
   });
 
   it("rejects non-http(s) protocols", () => {
-    const result = validateScoreUrls(["javascript:alert(1)"]);
+    const result = validateScoreUrls([{ url: "javascript:alert(1)", label: "" }]);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.scoreUrls).toBe(
         "譜面URLはhttpまたはhttpsのURLを入力してください",
       );
     }
-    expect(validateScoreUrls(["ftp://example.com"]).ok).toBe(false);
+    expect(validateScoreUrls([{ url: "ftp://example.com", label: "" }]).ok).toBe(false);
   });
 
   it("rejects malformed URLs", () => {
-    const result = validateScoreUrls(["not a url"]);
+    const result = validateScoreUrls([{ url: "not a url", label: "" }]);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.scoreUrls).toBe("譜面URLの形式が正しくありません");
@@ -413,7 +425,7 @@ describe("validateScoreUrls", () => {
 
   it("rejects URLs over the 500 character limit", () => {
     const longUrl = `https://example.com/${"a".repeat(500)}`;
-    const result = validateScoreUrls([longUrl]);
+    const result = validateScoreUrls([{ url: longUrl, label: "" }]);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.scoreUrls).toBe("譜面URLは500文字以内で入力してください");
@@ -421,8 +433,11 @@ describe("validateScoreUrls", () => {
   });
 
   it("rejects when there are more than 10 non-blank URLs", () => {
-    const urls = Array.from({ length: 11 }, (_, i) => `https://example.com/${i}`);
-    const result = validateScoreUrls(urls);
+    const rows = Array.from({ length: 11 }, (_, i) => ({
+      url: `https://example.com/${i}`,
+      label: "",
+    }));
+    const result = validateScoreUrls(rows);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.scoreUrls).toBe("譜面URLは10件までです");
@@ -430,33 +445,138 @@ describe("validateScoreUrls", () => {
   });
 
   it("accepts exactly 10 non-blank URLs", () => {
-    const urls = Array.from({ length: 10 }, (_, i) => `https://example.com/${i}`);
-    expect(validateScoreUrls(urls).ok).toBe(true);
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      url: `https://example.com/${i}`,
+      label: "",
+    }));
+    expect(validateScoreUrls(rows).ok).toBe(true);
   });
 
-  it("collapses duplicate URLs into one, keeping the first occurrence", () => {
+  it("collapses rows whose url and label both match, keeping the first", () => {
     const result = validateScoreUrls([
-      "https://example.com/a",
-      "https://example.com/b",
-      "https://example.com/a",
+      { url: "https://example.com/a", label: "ギター" },
+      { url: "https://example.com/b", label: "" },
+      { url: "https://example.com/a", label: "ギター" },
     ]);
     expect(result).toEqual({
       ok: true,
-      value: ["https://example.com/a", "https://example.com/b"],
+      value: [
+        { url: "https://example.com/a", label: "ギター" },
+        { url: "https://example.com/b", label: "" },
+      ],
+    });
+  });
+
+  it("keeps both rows when the same URL is given two different labels", () => {
+    const result = validateScoreUrls([
+      { url: "https://example.com/a", label: "ギター" },
+      { url: "https://example.com/a", label: "ベース" },
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      value: [
+        { url: "https://example.com/a", label: "ギター" },
+        { url: "https://example.com/a", label: "ベース" },
+      ],
     });
   });
 
   it("counts the limit after deduplication (11 rows with 1 duplicate pair is 10)", () => {
-    const urls = [
-      ...Array.from({ length: 10 }, (_, i) => `https://example.com/${i}`),
-      "https://example.com/0",
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        url: `https://example.com/${i}`,
+        label: "",
+      })),
+      { url: "https://example.com/0", label: "" },
     ];
-    expect(urls.length).toBe(11);
-    const result = validateScoreUrls(urls);
+    expect(rows.length).toBe(11);
+    const result = validateScoreUrls(rows);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.length).toBe(10);
     }
+  });
+
+  it("counts the limit after deduplication (11 identical rows collapse to 1)", () => {
+    const rows = Array.from({ length: 11 }, () => ({
+      url: "https://example.com/a",
+      label: "ギター",
+    }));
+    const result = validateScoreUrls(rows);
+    expect(result).toEqual({
+      ok: true,
+      value: [{ url: "https://example.com/a", label: "ギター" }],
+    });
+  });
+
+  it("trims the label", () => {
+    expect(
+      validateScoreUrls([{ url: "https://example.com/a", label: "  ギター  " }]),
+    ).toEqual({
+      ok: true,
+      value: [{ url: "https://example.com/a", label: "ギター" }],
+    });
+  });
+
+  it("replaces control characters in the label with spaces", () => {
+    expect(
+      validateScoreUrls([{ url: "https://example.com/a", label: "ギター\n1" }]),
+    ).toEqual({
+      ok: true,
+      value: [{ url: "https://example.com/a", label: "ギター 1" }],
+    });
+  });
+
+  it("accepts a label of exactly 20 characters", () => {
+    const label = "あ".repeat(20);
+    expect(validateScoreUrls([{ url: "https://example.com/a", label }])).toEqual({
+      ok: true,
+      value: [{ url: "https://example.com/a", label }],
+    });
+  });
+
+  it("rejects a label of 21 characters", () => {
+    const result = validateScoreUrls([
+      { url: "https://example.com/a", label: "あ".repeat(21) },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.scoreUrls).toBe("譜面の名前は20文字以内で入力してください");
+    }
+  });
+
+  it("rejects a row that has a label but no URL", () => {
+    const result = validateScoreUrls([
+      { url: "https://example.com/a", label: "" },
+      { url: "  ", label: "ギター" },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.scoreUrls).toBe(
+        "名前を入力した行には譜面URLも入力してください",
+      );
+    }
+  });
+
+  it("drops a row where both the URL and the label are blank without an error", () => {
+    expect(
+      validateScoreUrls([
+        { url: "", label: "" },
+        { url: "https://example.com/a", label: "ギター" },
+        { url: "  ", label: "\t" },
+      ]),
+    ).toEqual({
+      ok: true,
+      value: [{ url: "https://example.com/a", label: "ギター" }],
+    });
+  });
+
+  it("trims the URL but does not strip control characters from it", () => {
+    const url = `https://example.com/a${String.fromCharCode(1)}b`;
+    expect(validateScoreUrls([{ url: `  ${url}  `, label: "" }])).toEqual({
+      ok: true,
+      value: [{ url, label: "" }],
+    });
   });
 });
 

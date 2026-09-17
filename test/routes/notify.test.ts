@@ -692,6 +692,59 @@ describe("Discord Bot 通知: 曲情報の編集(POST /e/:slug/songs/:id)", () =
     expect(editResponse.status).toBe(303);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("譜面の名前だけを変えた編集でも「変更しました」の行が出る", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "曲",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: ["ギター"],
+    });
+    const songId = extractSongId(songResponse);
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const editResponse = await editSong(created.client, created.slug, songId, {
+      title: "曲",
+      scoreUrls: ["https://example.com/a"],
+      scoreUrlLabels: ["ベース"],
+    });
+    expect(editResponse.status).toBe(303);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = lastRequestBody();
+    expect(body.content).toBe(
+      [
+        "〔テストオフ会〕主催者さんが「曲」の曲情報を変更しました",
+        "- 譜面URLを変更しました",
+      ].join("\n"),
+    );
+    // 名前もURLも値そのものは出さない(ユーザーの決定事項)。
+    expect(body.content).not.toContain("ギター");
+    expect(body.content).not.toContain("ベース");
+  });
+
+  it("名前を含めて完全に同じ内容を再送しても通知は送られない", async () => {
+    const created = await createEvent({ title: "テストオフ会" });
+    const scoreUrls = ["https://example.com/a", "https://example.com/b"];
+    const scoreUrlLabels = ["ギター", "ベース"];
+    const songResponse = await createSong(created.client, created.slug, {
+      title: "曲",
+      scoreUrls,
+      scoreUrlLabels,
+    });
+    const songId = extractSongId(songResponse);
+    capturedRequests = [];
+    fetchSpy.mockClear();
+
+    const editResponse = await editSong(created.client, created.slug, songId, {
+      title: "曲",
+      scoreUrls,
+      scoreUrlLabels,
+    });
+    expect(editResponse.status).toBe(303);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("Discord Bot 通知: 2回目以降の Take 追加(POST /e/:slug/songs/:id/takes)", () => {
