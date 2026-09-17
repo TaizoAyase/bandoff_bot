@@ -1,0 +1,1 @@
+ALTER TABLE `song_score_url` ADD `label` text;

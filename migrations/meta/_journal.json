@@ -43,6 +43,13 @@
       "when": 1789570931451,
       "tag": "0005_supreme_dark_phoenix",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789621291806,
+      "tag": "0006_steady_blue_shield",
+      "breakpoints": true
     }
   ]
 }
