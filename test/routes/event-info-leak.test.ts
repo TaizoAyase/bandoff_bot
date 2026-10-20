@@ -5,7 +5,7 @@ import { createEvent, createTestClient, joinAsViewer } from "../helpers";
  * 曲一覧ページはイベント名・日時・場所を表示する(`EventInfo`)。これらが
  * 認証前のリクエストに漏れないことを固定する。
  *
- * 仕様書の「合言葉画面にイベント名を出さない」と、README の「OGP メタを
+ * 仕様書の「合言葉画面にイベント名を出さない」と、docs/development.md の「OGP メタを
  * 出さない(Discord のプロキシがページを取得して埋め込みを生成するため)」は
  * どちらも「URL を知っただけの相手にイベントの中身を渡さない」ための規定で、
  * 実際に守っているのは `requireViewer` の 303 リダイレクトである。

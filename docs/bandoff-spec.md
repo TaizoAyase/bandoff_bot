@@ -505,7 +505,7 @@ Discord Developer Portalでのアプリ作成とサーバーへのBot導入は�
 実装した作業:
 
 - Discord Developer PortalでのPublic Keyの取得
-- ギルド単位でのスラッシュコマンド登録スクリプト(`scripts/register-discord-commands.mjs`、README「デプロイ」手順7・10)
+- ギルド単位でのスラッシュコマンド登録スクリプト(`scripts/register-discord-commands.mjs`、docs/development.md「デプロイ」手順7・10)
 - Interactionsエンドポイント(Ed25519署名検証をWebCryptoで実装 → PING応答 → コマンド処理)
 
 注意点として、**Discordアプリ内ブラウザ問題**がある。スマホでリンクをタップするとDiscord内蔵ブラウザで開かれ、そこで発行されたcookieは普段使いのブラウザとは別物になる。トークンは10分間・1回だけ有効という短い寿命のままにし、代わりに`/bandoff open`を何度でも叩き直せることを対策とする(「入れなくなったらもう一回コマンド」で復帰できる)。トークンをURLのフラグメントに置く設計(6.7)も、この使い捨てリンクをアプリ内ブラウザで開いたときにアクセスログへ残さないための工夫。

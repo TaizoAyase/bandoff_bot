@@ -1,10 +1,10 @@
-# bandoff
+# bandoff 開発者向けドキュメント
 
 スタジオオフ会(複数人が楽器を持ち寄って集まる音楽イベント)向けの、曲・パート
 管理 Web アプリ。合言葉で入るイベントスコープの URL の中で、参加者が曲を登録し、
 Gt/Ba/Dr/Vo などの枠(Slot)に自由にエントリー・辞退できる。認証は持たず、推測不能
 な URL・合言葉・端末トークンの3レイヤーでアクセスを制御する(詳細は
-`docs/bandoff-spec.md` を参照)。Cloudflare Workers + D1 の上で動く TypeScript
+`bandoff-spec.md` を参照)。Cloudflare Workers + D1 の上で動く TypeScript
 (Hono + Hono JSX の SSR)アプリケーションで、フェーズ1(Web のみ)の範囲を実装
 している。
 
@@ -254,7 +254,7 @@ pnpm exec wrangler secret put SESSION_SECRET
 イベントの作成・編集、曲の追加・編集、Take(2回目以降)・枠の追加、
 参加者登録、エントリーの追加・辞退、参加の取りやめ(自分から)を
 Discord の1チャンネルに通知したい場合のみ行う(詳細は
-`docs/bandoff-spec.md` の7章「変更の通知」を参照)。`DISCORD_BOT_TOKEN` と
+`bandoff-spec.md` の7章「変更の通知」を参照)。`DISCORD_BOT_TOKEN` と
 `DISCORD_CHANNEL_ID` の両方が揃うまで通知機能は完全に no-op になり、他の
 動作には影響しない。
 
@@ -293,7 +293,7 @@ Regenerate する。
 ### 7. 本番用のスラッシュコマンドを有効にする(任意)
 
 Discord から `/bandoff open`・`/bandoff list`・`/bandoff new` を使えるように
-したい場合のみ行う(詳細は `docs/bandoff-spec.md` の2.3節を参照)。手順6の
+したい場合のみ行う(詳細は `bandoff-spec.md` の2.3節を参照)。手順6の
 通知用 Bot とは独立した設定で、`DISCORD_PUBLIC_KEY` と `DISCORD_GUILD_ID` の
 両方が揃うまでコマンドは完全に無効(`POST /discord/interactions` は 404)の
 ままで、他の動作には影響しない。招待スコープには手順6の時点で既に
@@ -440,22 +440,22 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
 
 ### 13. リリースの流れ(バージョンを上げるとき)
 
-変更履歴は v0.4.0 から `CHANGELOG.md` を唯一の出所にしている(v0.3.0 以前は
+変更履歴は v0.4.0 から `../CHANGELOG.md` を唯一の出所にしている(v0.3.0 以前は
 `git tag -n99 v0.3.0` のようにタグ本文を参照する)。バージョンを上げるときは
 次の順で進める。
 
 1. `release/vX.Y.Z` ブランチで、`package.json` の `version`・
    `src/notify/discord.ts` の User-Agent(`DiscordBot (bandoff, X.Y.Z)`)・
-   `CHANGELOG.md` の3つを更新する。`CHANGELOG.md` は先頭に新しいバージョンの
+   `../CHANGELOG.md` の3つを更新する。`../CHANGELOG.md` は先頭に新しいバージョンの
    節(`### 変更`・`### デプロイ時の注意`・`### 既知の問題`)を追加する
    (遡っての記載はしない)。「変更」の節はバンドメンバーが Discord で読む
    文章なので、マイグレーション番号やファイル名を出さず、です・ます調で書く
 2. main にマージし、`vX.Y.Z` のアノテーション付きタグを打つ。**タグ本文には
-   1行の要約と `CHANGELOG.md` への参照だけを書く。** push したタグの本文は
-   後から書き換えられないため、詳細はタグではなく `CHANGELOG.md` 側に置く
+   1行の要約と `../CHANGELOG.md` への参照だけを書く。** push したタグの本文は
+   後から書き換えられないため、詳細はタグではなく `../CHANGELOG.md` 側に置く
 3. 上の手順8「本番 D1 にマイグレーションを適用する」(`pnpm db:migrate:remote`)
    → 手順9「デプロイする」(`pnpm deploy`)の順で本番に反映する
-4. **デプロイの成功を確認してから**、`CHANGELOG.md` の先頭バージョンの
+4. **デプロイの成功を確認してから**、`../CHANGELOG.md` の先頭バージョンの
    「変更」の節だけを Discord の通知チャンネルに投稿する。まず本文を確認する。
 
    ```sh
@@ -477,7 +477,7 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
    `echo $DISCORD_BOT_TOKEN` 等で残っていないか確認する。`.dev.vars.announce`
    を書き忘れて存在しない場合は(`--env-file-if-exists` ではなく
    `--env-file` を使っているため)Node がその場でエラーになり、投稿は
-   行われない。`CHANGELOG.md` の先頭バージョンと `package.json` の
+   行われない。`../CHANGELOG.md` の先頭バージョンと `package.json` の
    `version` が一致しない場合、または本文が Discord の上限(2000文字)を
    超える場合も、投稿せずエラーで終了する。
 
@@ -501,7 +501,7 @@ deploy:dry`(手順1〜4より前でも試せるバンドル検証用コマンド
 
 ## 実装していない機能
 
-フェーズ1(Web のみ)の範囲外のもの。仕様書 `docs/bandoff-spec.md` の10章に
+フェーズ1(Web のみ)の範囲外のもの。仕様書 `bandoff-spec.md` の10章に
 フェーズ2・3として記載があるものと、章としての言及はないが現時点で単に
 未実装のものが混ざっている。
 
